@@ -60,6 +60,7 @@ Restart Claude Code or run `/mcp` to reload.
 | `get_debugger_stack_trace` | Get stack trace when paused on error | none |
 | `get_debugger_locals` | Get local variables for a stack frame | `frame_index` (optional) - 0=top frame |
 | `get_remote_scene_tree` | Get instantiated node tree from running game | none |
+| `get_remote_node_properties` | Get properties of a specific node from running game | `node_path` (required) - path like /root/game/Player |
 
 ## Architecture
 
@@ -95,6 +96,9 @@ Returns all local variables for the selected stack frame. Use `frame_index` to s
 
 ### Remote Scene Tree (`get_remote_scene_tree`)
 Returns the instantiated node tree from the running game. Shows "root" at top with autoloads and the active scene hierarchy. Only available while game is running.
+
+### Remote Node Properties (`get_remote_node_properties`)
+Returns all properties of a specific node in the running game. Use `node_path` to specify which node (e.g., `/root/game/Player`). Returns property names, values, and types. Only available while game is running.
 
 ## Configuration
 

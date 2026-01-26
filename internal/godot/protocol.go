@@ -105,3 +105,15 @@ type SceneTreeResult struct {
 	Tree   string `json:"tree"`
 	Length int    `json:"length"`
 }
+
+// GetNodePropertiesParams for get_remote_node_properties method
+type GetNodePropertiesParams struct {
+	NodePath string `json:"node_path"`
+}
+
+// NodePropertiesResult from get_remote_node_properties
+type NodePropertiesResult struct {
+	NodePath   string          `json:"node_path"`
+	Properties []LocalVariable `json:"properties"`
+	Count      int             `json:"count"`
+}

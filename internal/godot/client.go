@@ -415,3 +415,23 @@ func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, erro
 	}
 	return &result, nil
 }
+
+// GetRemoteNodeProperties fetches properties of a specific node from running game
+func (c *Client) GetRemoteNodeProperties(ctx context.Context, nodePath string) (*NodePropertiesResult, error) {
+	params := GetNodePropertiesParams{NodePath: nodePath}
+	resp, err := c.sendRequest(ctx, "get_remote_node_properties", params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result NodePropertiesResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}

@@ -20,6 +20,9 @@ var debugger_inspector: Control = null  # EditorDebuggerInspector
 # remote scene tree reference
 var remote_scene_tree: Tree = null
 
+# main inspector reference (for remote node properties)
+var main_inspector: Control = null
+
 
 
 func _ready() -> void:
@@ -112,6 +115,102 @@ func _find_remote_scene_tree() -> void:
 			return
 
 	push_warning("[GodotPeek] Could not find EditorDebuggerTree (is game running?)")
+
+
+func _find_main_inspector() -> void:
+	if main_inspector:
+		return
+
+	var base := EditorInterface.get_base_control()
+	var all_nodes := _find_all_nodes(base)
+
+	for node in all_nodes:
+		var path := str(node.get_path())
+		if node.get_class() == "EditorInspector" and "DockSlotRightUL/Inspector/@EditorInspector" in path:
+			main_inspector = node
+			print("[GodotPeek] Found main EditorInspector: %s" % path)
+			return
+
+
+func _find_tree_item_by_path(root: TreeItem, path_parts: Array) -> TreeItem:
+	# navigate down the tree following path_parts
+	# first part should match root itself (usually "root")
+	if path_parts.is_empty():
+		return root
+
+	var current := root
+	var start_idx := 0
+
+	# if first part matches root's text, skip it
+	if path_parts[0] == root.get_text(0):
+		start_idx = 1
+
+	# navigate through remaining parts
+	for i in range(start_idx, path_parts.size()):
+		var part: String = path_parts[i]
+		var found := false
+		for child in current.get_children():
+			if child.get_text(0) == part:
+				current = child
+				found = true
+				break
+		if not found:
+			return null
+
+	return current
+
+
+func _get_remote_node_properties(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	if node_path.is_empty():
+		_send_error(ws, id, -32602, "Missing required parameter: node_path")
+		return
+
+	# find remote scene tree (lazy, only exists when game running)
+	_find_remote_scene_tree()
+	if not remote_scene_tree:
+		_send_error(ws, id, -32000, "Remote scene tree not found (is game running?)")
+		return
+
+	# find main inspector (lazy)
+	_find_main_inspector()
+	if not main_inspector:
+		_send_error(ws, id, -32000, "Main inspector not found")
+		return
+
+	# parse path and find node in tree
+	var path_parts := node_path.trim_prefix("/").split("/")
+	var root := remote_scene_tree.get_root()
+	if not root:
+		_send_error(ws, id, -32000, "Remote scene tree has no root")
+		return
+
+	var target := _find_tree_item_by_path(root, path_parts)
+	if not target:
+		_send_error(ws, id, -32000, "Node not found in remote tree: %s" % node_path)
+		return
+
+	# get object ID from TreeItem metadata
+	var object_id = target.get_metadata(0)
+	if object_id == null:
+		_send_error(ws, id, -32000, "No object ID for node: %s" % node_path)
+		return
+
+	# trigger remote object inspection via objects_selected signal
+	remote_scene_tree.set_selected(target, 0)
+	var ids := PackedInt64Array([object_id])
+	remote_scene_tree.objects_selected.emit(ids, 0)
+
+	# wait for inspector to populate
+	await get_tree().create_timer(0.3).timeout
+
+	# extract properties from main inspector
+	var props := _extract_inspector_properties(main_inspector)
+	_send_result(ws, id, {
+		"node_path": node_path,
+		"properties": props,
+		"count": props.size()
+	})
 
 
 func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
@@ -226,6 +325,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_debugger_locals(ws, id, params)
 		"get_remote_scene_tree":
 			_get_remote_scene_tree(ws, id)
+		"get_remote_node_properties":
+			_get_remote_node_properties(ws, id, params)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 

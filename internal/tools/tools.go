@@ -102,6 +102,18 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetRemoteSceneTree(client),
 	)
+
+	// get_remote_node_properties - get properties of a specific node from running game
+	s.AddTool(
+		mcp.NewTool("get_remote_node_properties",
+			mcp.WithDescription("Get properties of a specific node from the running game (requires game to be running)"),
+			mcp.WithString("node_path",
+				mcp.Required(),
+				mcp.Description("Path to node in remote scene tree, e.g. /root/game/Player"),
+			),
+		),
+		makeGetRemoteNodeProperties(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -321,5 +333,35 @@ func makeGetRemoteSceneTree(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(result.Tree), nil
+	}
+}
+
+func makeGetRemoteNodeProperties(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		nodePath, err := req.RequireString("node_path")
+		if err != nil {
+			return mcp.NewToolResultError("missing required parameter: node_path"), nil
+		}
+
+		result, err := client.GetRemoteNodeProperties(ctx, nodePath)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get node properties: %v", err)), nil
+		}
+
+		if result.Count == 0 {
+			return mcp.NewToolResultText("No properties (node not found or game not running)"), nil
+		}
+
+		// format as readable text
+		var output string
+		for _, prop := range result.Properties {
+			output += fmt.Sprintf("%s = %s\n", prop.Name, prop.Value)
+		}
+
+		return mcp.NewToolResultText(output), nil
 	}
 }
