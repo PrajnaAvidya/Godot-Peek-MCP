@@ -49,10 +49,9 @@ func _find_output_dock() -> void:
 		if "EditorLog" in path:
 			output_rich_text = rt
 			last_output_length = rt.get_parsed_text().length()
-			print("[GodotPeek] Found Output dock: %s" % path)
 			return
 
-	push_warning("[GodotPeek] Could not find EditorLog RichTextLabel")
+	push_warning("[GodotPeek] Could not find Output dock (EditorLog RichTextLabel)")
 
 
 func _find_debugger_dock() -> void:
@@ -64,7 +63,6 @@ func _find_debugger_dock() -> void:
 		var path: String = str(tree.get_path())
 		if "EditorDebuggerNode" in path and "Errors" in path:
 			debugger_errors_tree = tree
-			print("[GodotPeek] Found Debugger Errors tree: %s" % path)
 			break
 
 	# find Stack Trace RichTextLabel (error message header)
@@ -73,7 +71,6 @@ func _find_debugger_dock() -> void:
 		var path: String = str(rt.get_path())
 		if "EditorDebuggerNode" in path and "Stack Trace" in path:
 			debugger_stack_trace = rt
-			print("[GodotPeek] Found Debugger Stack Trace message: %s" % path)
 			break
 
 	# find Stack Trace Tree (actual stack frames)
@@ -82,7 +79,6 @@ func _find_debugger_dock() -> void:
 		var path: String = str(tree.get_path())
 		if "Stack Trace" in path and "VBoxContainer" in path:
 			debugger_stack_frames = tree
-			print("[GodotPeek] Found Debugger Stack Frames tree: %s" % path)
 			break
 
 	# find EditorDebuggerInspector (shows locals when frame selected)
@@ -90,11 +86,17 @@ func _find_debugger_dock() -> void:
 	for node in all_nodes:
 		if node.get_class() == "EditorDebuggerInspector":
 			debugger_inspector = node
-			print("[GodotPeek] Found EditorDebuggerInspector: %s" % node.get_path())
 			break
 
-	if not debugger_errors_tree and not debugger_stack_trace:
-		push_warning("[GodotPeek] Could not find Debugger controls")
+	# warn if critical controls not found
+	if not debugger_errors_tree:
+		push_warning("[GodotPeek] Could not find Debugger Errors tree")
+	if not debugger_stack_trace:
+		push_warning("[GodotPeek] Could not find Debugger Stack Trace message")
+	if not debugger_stack_frames:
+		push_warning("[GodotPeek] Could not find Debugger Stack Frames tree")
+	if not debugger_inspector:
+		push_warning("[GodotPeek] Could not find EditorDebuggerInspector")
 
 
 
@@ -107,14 +109,9 @@ func _find_remote_scene_tree() -> void:
 	for node in all_nodes:
 		if node.get_class() == "EditorDebuggerTree":
 			remote_scene_tree = node as Tree
-			var root := remote_scene_tree.get_root()
-			if root:
-				print("[GodotPeek] Found remote scene tree: %s (root: '%s', children: %d)" % [node.get_path(), root.get_text(0), root.get_child_count()])
-			else:
-				print("[GodotPeek] Found remote scene tree: %s (no root yet)" % node.get_path())
 			return
 
-	push_warning("[GodotPeek] Could not find EditorDebuggerTree (is game running?)")
+	# no warning here - this is expected when game isn't running
 
 
 func _find_main_inspector() -> void:
@@ -128,8 +125,9 @@ func _find_main_inspector() -> void:
 		var path := str(node.get_path())
 		if node.get_class() == "EditorInspector" and "DockSlotRightUL/Inspector/@EditorInspector" in path:
 			main_inspector = node
-			print("[GodotPeek] Found main EditorInspector: %s" % path)
 			return
+
+	push_warning("[GodotPeek] Could not find main EditorInspector")
 
 
 func _find_tree_item_by_path(root: TreeItem, path_parts: Array) -> TreeItem:
