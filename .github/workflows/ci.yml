@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - run: go test ./...
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build and package
+        run: |
+          mkdir -p dist
+
+          GOOS=linux GOARCH=amd64 go build -o godot-mcp ./cmd/godot-mcp
+          chmod +x godot-mcp
+          tar -czvf dist/godot-mcp-linux-amd64.tar.gz godot-mcp
+          rm godot-mcp
+
+          GOOS=darwin GOARCH=arm64 go build -o godot-mcp ./cmd/godot-mcp
+          chmod +x godot-mcp
+          tar -czvf dist/godot-mcp-darwin-arm64.tar.gz godot-mcp
+          rm godot-mcp
+
+          GOOS=windows GOARCH=amd64 go build -o godot-mcp.exe ./cmd/godot-mcp
+          zip dist/godot-mcp-windows-amd64.zip godot-mcp.exe
+          rm godot-mcp.exe
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
