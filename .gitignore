@@ -1,0 +1,5 @@
+.idea/
+
+# go build output
+godot-mcp
+*.exe
