@@ -1,5 +1,5 @@
 .idea/
 
 # go build output
-godot-mcp
+godot-peek-mcp
 *.exe

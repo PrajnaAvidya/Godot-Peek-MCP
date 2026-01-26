@@ -215,7 +215,7 @@ func main() {
     defer godotConn.Close()
     
     // Create MCP server with tools
-    mcpServer := server.NewMCPServer("godot-mcp", "1.0.0",
+    mcpServer := server.NewMCPServer("godot-peek-mcp", "1.0.0",
         server.WithToolCapabilities(true),
         server.WithRecovery(),  // Recover from tool panics
     )

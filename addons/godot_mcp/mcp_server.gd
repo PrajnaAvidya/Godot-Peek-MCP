@@ -22,9 +22,9 @@ func _ready() -> void:
 	tcp_server = TCPServer.new()
 	var err := tcp_server.listen(PORT)
 	if err != OK:
-		push_error("[GodotMCP] Failed to start TCP server on port %d: %s" % [PORT, error_string(err)])
+		push_error("[GodotPeek] Failed to start TCP server on port %d: %s" % [PORT, error_string(err)])
 		return
-	print("[GodotMCP] WebSocket server listening on ws://localhost:%d" % PORT)
+	print("[GodotPeek] WebSocket server listening on ws://localhost:%d" % PORT)
 
 	# find the output and debugger docks
 	call_deferred("_find_output_dock")
@@ -41,10 +41,10 @@ func _find_output_dock() -> void:
 		if "EditorLog" in path:
 			output_rich_text = rt
 			last_output_length = rt.get_parsed_text().length()
-			print("[GodotMCP] Found Output dock: %s" % path)
+			print("[GodotPeek] Found Output dock: %s" % path)
 			return
 
-	push_warning("[GodotMCP] Could not find EditorLog RichTextLabel")
+	push_warning("[GodotPeek] Could not find EditorLog RichTextLabel")
 
 
 func _find_debugger_dock() -> void:
@@ -56,7 +56,7 @@ func _find_debugger_dock() -> void:
 		var path: String = str(tree.get_path())
 		if "EditorDebuggerNode" in path and "Errors" in path:
 			debugger_errors_tree = tree
-			print("[GodotMCP] Found Debugger Errors tree: %s" % path)
+			print("[GodotPeek] Found Debugger Errors tree: %s" % path)
 			break
 
 	# find Stack Trace RichTextLabel (error message header)
@@ -65,7 +65,7 @@ func _find_debugger_dock() -> void:
 		var path: String = str(rt.get_path())
 		if "EditorDebuggerNode" in path and "Stack Trace" in path:
 			debugger_stack_trace = rt
-			print("[GodotMCP] Found Debugger Stack Trace message: %s" % path)
+			print("[GodotPeek] Found Debugger Stack Trace message: %s" % path)
 			break
 
 	# find Stack Trace Tree (actual stack frames)
@@ -74,7 +74,7 @@ func _find_debugger_dock() -> void:
 		var path: String = str(tree.get_path())
 		if "Stack Trace" in path and "VBoxContainer" in path:
 			debugger_stack_frames = tree
-			print("[GodotMCP] Found Debugger Stack Frames tree: %s" % path)
+			print("[GodotPeek] Found Debugger Stack Frames tree: %s" % path)
 			break
 
 	# find EditorDebuggerInspector (shows locals when frame selected)
@@ -82,11 +82,11 @@ func _find_debugger_dock() -> void:
 	for node in all_nodes:
 		if node.get_class() == "EditorDebuggerInspector":
 			debugger_inspector = node
-			print("[GodotMCP] Found EditorDebuggerInspector: %s" % node.get_path())
+			print("[GodotPeek] Found EditorDebuggerInspector: %s" % node.get_path())
 			break
 
 	if not debugger_errors_tree and not debugger_stack_trace:
-		push_warning("[GodotMCP] Could not find Debugger controls")
+		push_warning("[GodotPeek] Could not find Debugger controls")
 
 
 func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
@@ -130,9 +130,9 @@ func _process_pending_connections() -> void:
 			var err := ws.accept_stream(conn)
 			if err == OK:
 				clients.append(ws)
-				print("[GodotMCP] Client connected")
+				print("[GodotPeek] Client connected")
 			else:
-				push_error("[GodotMCP] WebSocket accept failed: %s" % error_string(err))
+				push_error("[GodotPeek] WebSocket accept failed: %s" % error_string(err))
 		elif status == StreamPeerTCP.STATUS_CONNECTING:
 			still_pending.append(conn)
 		# else: connection failed, drop it
@@ -155,7 +155,7 @@ func _process_clients() -> void:
 		elif state == WebSocketPeer.STATE_CLOSING:
 			active_clients.append(ws)
 		elif state == WebSocketPeer.STATE_CLOSED:
-			print("[GodotMCP] Client disconnected")
+			print("[GodotPeek] Client disconnected")
 		# STATE_CONNECTING - keep in list
 
 	clients = active_clients
@@ -178,7 +178,7 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 	var method: String = req.get("method", "")
 	var params: Dictionary = req.get("params", {})
 
-	print("[GodotMCP] Received: method=%s id=%s" % [method, str(id)])
+	print("[GodotPeek] Received: method=%s id=%s" % [method, str(id)])
 
 	match method:
 		"ping":

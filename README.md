@@ -1,6 +1,6 @@
-# Godot MCP Server
+# Godot Peek MCP
 
-MCP (Model Context Protocol) server that enables AI assistants to control the Godot 4.5+ editor. Run scenes, capture output, inspect debugger state - all programmatically.
+MCP (Model Context Protocol) server for peeking into Godot 4.5+ editor runtime. Run scenes, capture output, inspect debugger state - all programmatically.
 
 ## Features
 
@@ -13,7 +13,7 @@ MCP (Model Context Protocol) server that enables AI assistants to control the Go
 ### 1. Build the MCP Server
 
 ```bash
-go build -o godot-mcp ./cmd/godot-mcp
+go build -o godot-peek-mcp ./cmd/godot-peek-mcp
 ```
 
 ### 2. Install Godot Plugin
@@ -24,17 +24,17 @@ Copy `addons/godot_mcp` to your Godot project:
 cp -r addons/godot_mcp /path/to/your/godot/project/addons/
 ```
 
-Enable in Godot: Project → Project Settings → Plugins → Enable "Godot MCP"
+Enable in Godot: Project → Project Settings → Plugins → Enable "Godot Peek MCP"
 
 You should see:
 ```
-[GodotMCP] WebSocket server listening on ws://localhost:6970
+[GodotPeek] WebSocket server listening on ws://localhost:6970
 ```
 
 ### 3. Register with Claude Code
 
 ```bash
-claude mcp add godot /path/to/godot-mcp-minimal/godot-mcp
+claude mcp add godot-peek /path/to/godot-peek-mcp/godot-peek-mcp
 ```
 
 Restart Claude Code or run `/mcp` to reload.
@@ -91,7 +91,7 @@ wscat -c ws://localhost:6970
 ```
 ┌─────────────────────┐     stdio      ┌─────────────────────┐
 │   Claude Code       │◄──────────────►│    Go MCP Server    │
-│   (MCP Client)      │                │   (godot-mcp)       │
+│   (MCP Client)      │                │   (godot-peek-mcp)  │
 └─────────────────────┘                └──────────┬──────────┘
                                                   │ WebSocket
                                                   │ ws://localhost:6970
@@ -150,4 +150,4 @@ The plugin port is configured in `addons/godot_mcp/mcp_server.gd` (default: 6970
 
 **Connection refused**
 - Verify plugin is enabled in Project Settings → Plugins
-- Look for `[GodotMCP]` messages in Godot's Output panel
+- Look for `[GodotPeek]` messages in Godot's Output panel

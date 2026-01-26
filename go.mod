@@ -1,4 +1,4 @@
-module github.com/rafiq/godot-mcp
+module github.com/PrajnaAvidya/godot-peek-mcp
 
 go 1.25.5
 

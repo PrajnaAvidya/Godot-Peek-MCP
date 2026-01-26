@@ -7,7 +7,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/rafiq/godot-mcp/internal/godot"
+	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
 )
 
 // Register adds all Godot tools to the MCP server
