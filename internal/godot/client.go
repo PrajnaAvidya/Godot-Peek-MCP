@@ -376,3 +376,22 @@ func (c *Client) GetStackTrace(ctx context.Context) (*StackTraceResult, error) {
 	}
 	return &result, nil
 }
+
+// GetLocals fetches local variables from debugger (requires clicking a stack frame first)
+func (c *Client) GetLocals(ctx context.Context) (*LocalsResult, error) {
+	resp, err := c.sendRequest(ctx, "get_debugger_locals", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result LocalsResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}

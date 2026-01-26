@@ -15,6 +15,7 @@ var last_output_length: int = 0
 var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
 var debugger_stack_frames: Tree = null
+var debugger_inspector: Control = null  # EditorDebuggerInspector
 
 
 func _ready() -> void:
@@ -76,6 +77,14 @@ func _find_debugger_dock() -> void:
 			print("[GodotMCP] Found Debugger Stack Frames tree: %s" % path)
 			break
 
+	# find EditorDebuggerInspector (shows locals when frame selected)
+	var all_nodes := _find_all_nodes(base)
+	for node in all_nodes:
+		if node.get_class() == "EditorDebuggerInspector":
+			debugger_inspector = node
+			print("[GodotMCP] Found EditorDebuggerInspector: %s" % node.get_path())
+			break
+
 	if not debugger_errors_tree and not debugger_stack_trace:
 		push_warning("[GodotMCP] Could not find Debugger controls")
 
@@ -87,6 +96,30 @@ func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
 	for child in node.get_children():
 		results.append_array(_find_all_by_class(child, target_class))
 	return results
+
+
+func _find_all_nodes(node: Node) -> Array[Node]:
+	var results: Array[Node] = [node]
+	for child in node.get_children():
+		results.append_array(_find_all_nodes(child))
+	return results
+
+
+func _dump_node_tree(node: Node, depth: int, output: PackedStringArray) -> void:
+	var indent := "  ".repeat(depth)
+	var info := "%s%s [%s]" % [indent, node.name, node.get_class()]
+	# add value info for common types
+	if node is Label:
+		info += " text='%s'" % node.text
+	elif node is LineEdit:
+		info += " text='%s'" % node.text
+	elif node is Button:
+		info += " text='%s'" % node.text
+	elif node.has_method("get_value"):
+		info += " value=%s" % str(node.get_value())
+	output.append(info)
+	for child in node.get_children():
+		_dump_node_tree(child, depth + 1, output)
 
 
 func _process(_delta: float) -> void:
@@ -181,6 +214,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_debugger_errors(ws, id)
 		"get_debugger_stack_trace":
 			_get_debugger_stack_trace(ws, id)
+		"get_debugger_locals":
+			_get_debugger_locals(ws, id, params)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -293,6 +328,124 @@ func _get_debugger_stack_trace(ws: WebSocketPeer, id: Variant) -> void:
 		"stack_trace": combined,
 		"length": combined.length()
 	})
+
+
+func _get_debugger_locals(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	if not debugger_inspector:
+		_send_error(ws, id, -32000, "EditorDebuggerInspector not found")
+		return
+
+	# optionally select a specific stack frame first
+	var frame_index: int = params.get("frame_index", -1)
+	if frame_index >= 0 and debugger_stack_frames:
+		var root := debugger_stack_frames.get_root()
+		if root:
+			var target_item := _get_tree_item_at_index(root, frame_index)
+			if target_item:
+				debugger_stack_frames.set_selected(target_item, 0)
+				# emit signal to trigger inspector update
+				debugger_stack_frames.item_selected.emit()
+				# small delay for inspector to update
+				await get_tree().create_timer(0.05).timeout
+
+	# extract property info from inspector
+	var locals := _extract_inspector_properties(debugger_inspector)
+	_send_result(ws, id, {
+		"locals": locals,
+		"count": locals.size(),
+		"frame_index": frame_index
+	})
+
+
+func _get_tree_item_at_index(root: TreeItem, index: int) -> TreeItem:
+	var current_index := 0
+	for child in root.get_children():
+		if current_index == index:
+			return child
+		current_index += 1
+	return null
+
+
+func _extract_inspector_properties(inspector: Control) -> Array:
+	var properties: Array = []
+	_collect_editor_properties(inspector, properties)
+	return properties
+
+
+func _collect_editor_properties(node: Node, properties: Array) -> void:
+	var node_class := node.get_class()
+
+	# EditorProperty subclasses contain the actual property data
+	if node_class.begins_with("EditorProperty"):
+		var prop_name := ""
+		var prop_value := ""
+
+		# try to get label (property name)
+		if node.has_method("get_label"):
+			prop_name = node.get_label()
+
+		# look for Label child with property name
+		for child in node.get_children():
+			if child is Label:
+				if prop_name.is_empty():
+					prop_name = child.text
+				break
+
+		# try to extract value based on property type
+		if node_class == "EditorPropertyNil":
+			prop_value = "null"
+		elif node_class == "EditorPropertyInteger" or node_class == "EditorPropertyFloat":
+			for child in node.get_children():
+				if child.get_class() == "EditorSpinSlider":
+					if child.has_method("get_value"):
+						prop_value = str(child.get_value())
+					break
+		elif node_class == "EditorPropertyText":
+			for child in node.get_children():
+				if child is LineEdit:
+					prop_value = child.text
+					break
+		elif node_class == "EditorPropertyObjectID":
+			for child in node.get_children():
+				if child is Button:
+					prop_value = child.text
+					break
+		elif node_class == "EditorPropertyVector3" or node_class == "EditorPropertyVector2":
+			# find EditorSpinSlider children recursively
+			var sliders := _find_all_by_class(node, "EditorSpinSlider")
+			if sliders.size() == 3:
+				prop_value = "(%s, %s, %s)" % [sliders[0].get_value(), sliders[1].get_value(), sliders[2].get_value()]
+			elif sliders.size() == 2:
+				prop_value = "(%s, %s)" % [sliders[0].get_value(), sliders[1].get_value()]
+		elif node_class == "EditorPropertyCheck":
+			for child in node.get_children():
+				if child is CheckBox:
+					prop_value = "true" if child.button_pressed else "false"
+					break
+		elif node_class == "EditorPropertyArray":
+			for child in node.get_children():
+				if child is Button:
+					prop_value = child.text
+					break
+		else:
+			# fallback: try to find any text representation
+			for child in node.get_children():
+				if child is LineEdit:
+					prop_value = child.text
+					break
+				elif child is Label and child.text != prop_name:
+					prop_value = child.text
+					break
+				elif child is Button:
+					prop_value = child.text
+					break
+
+		if not prop_name.is_empty():
+			properties.append({"name": prop_name, "value": prop_value, "type": node_class})
+
+	# recurse into children
+	for child in node.get_children():
+		_collect_editor_properties(child, properties)
 
 
 func _get_tree_text(tree: Tree) -> String:

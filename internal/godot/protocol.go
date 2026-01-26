@@ -75,6 +75,19 @@ type StackTraceResult struct {
 	Length     int    `json:"length"`
 }
 
+// LocalVariable represents a single local variable
+type LocalVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}
+
+// LocalsResult from get_debugger_locals
+type LocalsResult struct {
+	Locals []LocalVariable `json:"locals"`
+	Count  int             `json:"count"`
+}
+
 // GenericResult for simple success responses
 type GenericResult struct {
 	Success   bool   `json:"success"`

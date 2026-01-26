@@ -83,6 +83,14 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetStackTrace(client),
 	)
+
+	// get_debugger_locals - get local variables for selected stack frame
+	s.AddTool(
+		mcp.NewTool("get_debugger_locals",
+			mcp.WithDescription("Get local variables from Godot Debugger (requires clicking a stack frame in the UI first)"),
+		),
+		makeGetLocals(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -250,5 +258,30 @@ func makeGetStackTrace(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(result.StackTrace), nil
+	}
+}
+
+func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.GetLocals(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get locals: %v", err)), nil
+		}
+
+		if result.Count == 0 {
+			return mcp.NewToolResultText("No locals (click a stack frame in the debugger first)"), nil
+		}
+
+		// format as readable text
+		var output string
+		for _, local := range result.Locals {
+			output += fmt.Sprintf("%s = %s\n", local.Name, local.Value)
+		}
+
+		return mcp.NewToolResultText(output), nil
 	}
 }
