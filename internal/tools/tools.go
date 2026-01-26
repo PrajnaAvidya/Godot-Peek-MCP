@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -15,6 +16,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	s.AddTool(
 		mcp.NewTool("run_main_scene",
 			mcp.WithDescription("Run the project's main scene (equivalent to F5 in Godot editor)"),
+			mcp.WithNumber("timeout_seconds",
+				mcp.Description("Auto-stop the scene after this many seconds"),
+			),
 		),
 		makeRunMainScene(client),
 	)
@@ -27,6 +31,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 				mcp.Required(),
 				mcp.Description("Path to scene file, e.g. res://scenes/game.tscn"),
 			),
+			mcp.WithNumber("timeout_seconds",
+				mcp.Description("Auto-stop the scene after this many seconds"),
+			),
 		),
 		makeRunScene(client),
 	)
@@ -35,6 +42,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	s.AddTool(
 		mcp.NewTool("run_current_scene",
 			mcp.WithDescription("Run the currently open scene in the editor"),
+			mcp.WithNumber("timeout_seconds",
+				mcp.Description("Auto-stop the scene after this many seconds"),
+			),
 		),
 		makeRunCurrentScene(client),
 	)
@@ -67,6 +77,26 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 }
 
+// scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
+func scheduleAutoStop(client *godot.Client, timeout float64) {
+	go func() {
+		time.Sleep(time.Duration(timeout * float64(time.Second)))
+		client.StopScene(context.Background())
+	}()
+}
+
+// getTimeoutArg extracts the optional timeout_seconds arg from request
+func getTimeoutArg(req mcp.CallToolRequest) float64 {
+	args := req.GetArguments()
+	if args == nil {
+		return 0
+	}
+	if v, ok := args["timeout_seconds"].(float64); ok && v > 0 {
+		return v
+	}
+	return 0
+}
+
 func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if !client.IsConnected() {
@@ -75,6 +105,12 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 
 		if err := client.RunMainScene(ctx); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run main scene: %v", err)), nil
+		}
+
+		timeout := getTimeoutArg(req)
+		if timeout > 0 {
+			scheduleAutoStop(client, timeout)
+			return mcp.NewToolResultText(fmt.Sprintf("Main scene started (will auto-stop in %.1fs)", timeout)), nil
 		}
 
 		return mcp.NewToolResultText("Main scene started successfully"), nil
@@ -96,6 +132,12 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run scene: %v", err)), nil
 		}
 
+		timeout := getTimeoutArg(req)
+		if timeout > 0 {
+			scheduleAutoStop(client, timeout)
+			return mcp.NewToolResultText(fmt.Sprintf("Scene started: %s (will auto-stop in %.1fs)", scenePath, timeout)), nil
+		}
+
 		return mcp.NewToolResultText(fmt.Sprintf("Scene started: %s", scenePath)), nil
 	}
 }
@@ -108,6 +150,12 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 
 		if err := client.RunCurrentScene(ctx); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run current scene: %v", err)), nil
+		}
+
+		timeout := getTimeoutArg(req)
+		if timeout > 0 {
+			scheduleAutoStop(client, timeout)
+			return mcp.NewToolResultText(fmt.Sprintf("Current scene started (will auto-stop in %.1fs)", timeout)), nil
 		}
 
 		return mcp.NewToolResultText("Current scene started successfully"), nil
