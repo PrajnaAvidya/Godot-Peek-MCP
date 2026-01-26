@@ -167,8 +167,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_stop_scene(ws, id)
 		"get_output":
 			_get_output(ws, id, params)
-		"get_debug_errors":
-			_get_debug_errors(ws, id)
+		"get_debugger_errors":
+			_get_debugger_errors(ws, id)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -242,7 +242,7 @@ func _get_output(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	})
 
 
-func _get_debug_errors(ws: WebSocketPeer, id: Variant) -> void:
+func _get_debugger_errors(ws: WebSocketPeer, id: Variant) -> void:
 	if not debugger_errors_tree:
 		_send_error(ws, id, -32000, "Debugger Errors tree not found")
 		return

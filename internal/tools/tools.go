@@ -68,9 +68,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		makeGetOutput(client),
 	)
 
-	// get_debug_errors - get debugger errors/warnings
+	// get_debugger_errors - get debugger errors/warnings
 	s.AddTool(
-		mcp.NewTool("get_debug_errors",
+		mcp.NewTool("get_debugger_errors",
 			mcp.WithDescription("Get errors and warnings from the Godot Debugger Errors tab"),
 		),
 		makeGetDebugErrors(client),

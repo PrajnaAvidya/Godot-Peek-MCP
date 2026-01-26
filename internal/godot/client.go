@@ -341,7 +341,7 @@ func (c *Client) GetOutputFromGodot(ctx context.Context, clear bool, newOnly boo
 
 // GetDebugErrors fetches errors/warnings from debugger
 func (c *Client) GetDebugErrors(ctx context.Context) (*DebugErrorsResult, error) {
-	resp, err := c.sendRequest(ctx, "get_debug_errors", nil)
+	resp, err := c.sendRequest(ctx, "get_debugger_errors", nil)
 	if err != nil {
 		return nil, err
 	}
