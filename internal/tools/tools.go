@@ -57,23 +57,23 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		makeStopScene(client),
 	)
 
-	// get_status - check if game is running
-	s.AddTool(
-		mcp.NewTool("get_status",
-			mcp.WithDescription("Get current Godot editor status (whether a scene is playing, output buffer size)"),
-		),
-		makeGetStatus(client),
-	)
-
 	// get_output - get buffered output/logs
 	s.AddTool(
 		mcp.NewTool("get_output",
-			mcp.WithDescription("Get buffered output from the running game (print statements, errors, warnings)"),
+			mcp.WithDescription("Get output from the Godot Output panel (print statements, errors, warnings)"),
 			mcp.WithBoolean("clear",
-				mcp.Description("If true, clear the output buffer after retrieving"),
+				mcp.Description("If true, mark current position as read for new_only"),
 			),
 		),
 		makeGetOutput(client),
+	)
+
+	// get_debug_errors - get debugger errors/warnings
+	s.AddTool(
+		mcp.NewTool("get_debug_errors",
+			mcp.WithDescription("Get errors and warnings from the Godot Debugger Errors tab"),
+		),
+		makeGetDebugErrors(client),
 	)
 }
 
@@ -176,31 +176,6 @@ func makeStopScene(client *godot.Client) server.ToolHandlerFunc {
 	}
 }
 
-func makeGetStatus(client *godot.Client) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
-			return mcp.NewToolResultError("not connected to Godot editor"), nil
-		}
-
-		status, err := client.GetStatus(ctx)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to get status: %v", err)), nil
-		}
-
-		playingStr := "not running"
-		if status.Playing {
-			playingStr = "running"
-		}
-
-		outputStr := "not available"
-		if status.OutputAvailable {
-			outputStr = fmt.Sprintf("%d chars", status.OutputLength)
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Scene: %s\nOutput: %s", playingStr, outputStr)), nil
-	}
-}
-
 func makeGetOutput(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if !client.IsConnected() {
@@ -229,5 +204,24 @@ func makeGetOutput(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(output.Output), nil
+	}
+}
+
+func makeGetDebugErrors(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.GetDebugErrors(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get debug errors: %v", err)), nil
+		}
+
+		if result.Length == 0 {
+			return mcp.NewToolResultText("No errors"), nil
+		}
+
+		return mcp.NewToolResultText(result.Errors), nil
 	}
 }

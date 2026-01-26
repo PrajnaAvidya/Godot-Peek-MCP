@@ -56,18 +56,17 @@ type GetOutputParams struct {
 	NewOnly bool `json:"new_only"`
 }
 
-// StatusResult from get_status
-type StatusResult struct {
-	Playing         bool `json:"playing"`
-	OutputAvailable bool `json:"output_available"`
-	OutputLength    int  `json:"output_length"`
-}
-
 // OutputResult from get_output
 type OutputResult struct {
 	Output      string `json:"output"`
 	Length      int    `json:"length"`
 	TotalLength int    `json:"total_length"`
+}
+
+// DebugErrorsResult from get_debug_errors
+type DebugErrorsResult struct {
+	Errors string `json:"errors"`
+	Length int    `json:"length"`
 }
 
 // GenericResult for simple success responses

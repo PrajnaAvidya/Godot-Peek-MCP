@@ -11,6 +11,10 @@ var pending_connections: Array[StreamPeerTCP] = []
 var output_rich_text: RichTextLabel = null
 var last_output_length: int = 0
 
+# debugger dock references
+var debugger_errors_tree: Tree = null
+var debugger_stack_trace: RichTextLabel = null
+
 
 func _ready() -> void:
 	tcp_server = TCPServer.new()
@@ -20,8 +24,9 @@ func _ready() -> void:
 		return
 	print("[GodotMCP] WebSocket server listening on ws://localhost:%d" % PORT)
 
-	# find the output dock
+	# find the output and debugger docks
 	call_deferred("_find_output_dock")
+	call_deferred("_find_debugger_dock")
 
 
 func _find_output_dock() -> void:
@@ -38,6 +43,31 @@ func _find_output_dock() -> void:
 			return
 
 	push_warning("[GodotMCP] Could not find EditorLog RichTextLabel")
+
+
+func _find_debugger_dock() -> void:
+	var base := EditorInterface.get_base_control()
+
+	# find the Errors Tree (contains warnings/errors)
+	var trees := _find_all_by_class(base, "Tree")
+	for tree: Tree in trees:
+		var path: String = str(tree.get_path())
+		if "EditorDebuggerNode" in path and "Errors" in path:
+			debugger_errors_tree = tree
+			print("[GodotMCP] Found Debugger Errors tree: %s" % path)
+			break
+
+	# also find Stack Trace RichTextLabel for crash info
+	var rich_texts := _find_all_by_class(base, "RichTextLabel")
+	for rt: RichTextLabel in rich_texts:
+		var path: String = str(rt.get_path())
+		if "EditorDebuggerNode" in path and "Stack Trace" in path:
+			debugger_stack_trace = rt
+			print("[GodotMCP] Found Debugger Stack Trace: %s" % path)
+			break
+
+	if not debugger_errors_tree and not debugger_stack_trace:
+		push_warning("[GodotMCP] Could not find Debugger controls")
 
 
 func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
@@ -135,10 +165,10 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_run_current_scene(ws, id)
 		"stop_scene":
 			_stop_scene(ws, id)
-		"get_status":
-			_get_status(ws, id)
 		"get_output":
 			_get_output(ws, id, params)
+		"get_debug_errors":
+			_get_debug_errors(ws, id)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -184,19 +214,6 @@ func _stop_scene(ws: WebSocketPeer, id: Variant) -> void:
 	_send_result(ws, id, {"success": true, "was_playing": was_playing})
 
 
-func _get_status(ws: WebSocketPeer, id: Variant) -> void:
-	var output_available := output_rich_text != null
-	var output_length := 0
-	if output_rich_text:
-		output_length = output_rich_text.get_parsed_text().length()
-
-	_send_result(ws, id, {
-		"playing": EditorInterface.is_playing_scene(),
-		"output_available": output_available,
-		"output_length": output_length
-	})
-
-
 func _get_output(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	if not output_rich_text:
 		_send_error(ws, id, -32000, "Output dock not found")
@@ -223,6 +240,49 @@ func _get_output(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 		"length": output_text.length(),
 		"total_length": full_text.length()
 	})
+
+
+func _get_debug_errors(ws: WebSocketPeer, id: Variant) -> void:
+	if not debugger_errors_tree:
+		_send_error(ws, id, -32000, "Debugger Errors tree not found")
+		return
+
+	var errors := _get_tree_text(debugger_errors_tree)
+	_send_result(ws, id, {
+		"errors": errors,
+		"length": errors.length()
+	})
+
+
+func _get_tree_text(tree: Tree) -> String:
+	var root := tree.get_root()
+	if not root:
+		return ""
+	return _get_tree_item_text(root, 0)
+
+
+func _get_tree_item_text(item: TreeItem, depth: int) -> String:
+	var result := ""
+	var indent := "  ".repeat(depth)
+
+	# get text from all columns
+	var col_count := item.get_tree().get_columns()
+	var line := ""
+	for col in range(col_count):
+		var text := item.get_text(col)
+		if not text.is_empty():
+			if not line.is_empty():
+				line += " | "
+			line += text
+
+	if not line.is_empty():
+		result += indent + line + "\n"
+
+	# recurse children
+	for child in item.get_children():
+		result += _get_tree_item_text(child, depth + 1)
+
+	return result
 
 
 func _send_result(ws: WebSocketPeer, id: Variant, result: Dictionary) -> void:

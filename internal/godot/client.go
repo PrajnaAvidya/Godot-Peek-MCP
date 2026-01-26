@@ -320,25 +320,6 @@ func (c *Client) StopScene(ctx context.Context) error {
 	return nil
 }
 
-// GetStatus returns current Godot state
-func (c *Client) GetStatus(ctx context.Context) (*StatusResult, error) {
-	resp, err := c.sendRequest(ctx, "get_status", nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
-	}
-
-	var result StatusResult
-	if resp.Result != nil {
-		if err := json.Unmarshal(*resp.Result, &result); err != nil {
-			return nil, fmt.Errorf("unmarshal result: %w", err)
-		}
-	}
-	return &result, nil
-}
-
 // GetOutputFromGodot fetches output buffer from Godot directly
 func (c *Client) GetOutputFromGodot(ctx context.Context, clear bool, newOnly bool) (*OutputResult, error) {
 	resp, err := c.sendRequest(ctx, "get_output", GetOutputParams{Clear: clear, NewOnly: newOnly})
@@ -350,6 +331,25 @@ func (c *Client) GetOutputFromGodot(ctx context.Context, clear bool, newOnly boo
 	}
 
 	var result OutputResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// GetDebugErrors fetches errors/warnings from debugger
+func (c *Client) GetDebugErrors(ctx context.Context) (*DebugErrorsResult, error) {
+	resp, err := c.sendRequest(ctx, "get_debug_errors", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result DebugErrorsResult
 	if resp.Result != nil {
 		if err := json.Unmarshal(*resp.Result, &result); err != nil {
 			return nil, fmt.Errorf("unmarshal result: %w", err)
