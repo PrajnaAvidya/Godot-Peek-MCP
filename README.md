@@ -1,35 +1,34 @@
 # Godot MCP Server
 
-A minimal MCP (Model Context Protocol) server that enables Claude Code to control the Godot 4.5+ editor. Run scenes, stop the game, and capture output - all from your AI assistant.
+MCP (Model Context Protocol) server that enables AI assistants to control the Godot 4.5+ editor. Run scenes, capture output, inspect debugger state - all programmatically.
+
+## Features
+
+- **Scene Control**: Run main/current/specific scenes, stop the game
+- **Output Capture**: Read the Output panel (print statements, errors, warnings)
+- **Debugger Integration**: Get errors, stack traces, and local variables when paused
 
 ## Quick Start
 
 ### 1. Build the MCP Server
 
 ```bash
-cd /path/to/godot-mcp-minimal
 go build -o godot-mcp ./cmd/godot-mcp
 ```
 
 ### 2. Install Godot Plugin
 
-Copy or symlink `addons/godot_mcp` to your Godot project:
+Copy `addons/godot_mcp` to your Godot project:
 
 ```bash
-# copy
 cp -r addons/godot_mcp /path/to/your/godot/project/addons/
-
-# or symlink (recommended for development)
-ln -s /path/to/godot-mcp-minimal/addons/godot_mcp /path/to/your/godot/project/addons/godot_mcp
 ```
 
-Then enable the plugin in Godot:
-1. Project → Project Settings → Plugins
-2. Enable "Godot MCP"
+Enable in Godot: Project → Project Settings → Plugins → Enable "Godot MCP"
 
-You should see in the Godot output panel:
+You should see:
 ```
-[GodotMCP] Plugin enabled, WebSocket server starting on port 6970
+[GodotMCP] WebSocket server listening on ws://localhost:6970
 ```
 
 ### 3. Register with Claude Code
@@ -38,88 +37,117 @@ You should see in the Godot output panel:
 claude mcp add godot /path/to/godot-mcp-minimal/godot-mcp
 ```
 
-Then restart Claude Code (or run `/mcp` to reload MCP servers).
+Restart Claude Code or run `/mcp` to reload.
 
-### 4. Use It
+## Tools
 
-With Godot open and the plugin enabled, ask Claude Code to:
-- "Run the main scene in Godot"
-- "Stop the game"
-- "Run the scene at res://levels/level1.tscn"
-- "Show me the game output"
-
-Claude Code automatically spawns the MCP server when needed - no manual server management required.
-
-## Available Tools
+### Scene Control
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `run_main_scene` | Run the project's main scene (F5) | none |
-| `run_scene` | Run a specific scene | `scene_path` (required) |
-| `run_current_scene` | Run the currently open scene | none |
+| `run_main_scene` | Run project's main scene (F5) | `timeout_seconds` (optional) - auto-stop after N seconds |
+| `run_scene` | Run a specific scene | `scene_path` (required), `timeout_seconds` (optional) |
+| `run_current_scene` | Run currently open scene | `timeout_seconds` (optional) |
 | `stop_scene` | Stop the running game | none |
-| `get_status` | Check if a scene is running | none |
-| `get_output` | Get captured print/error output | `clear` (optional) |
 
-## How It Works
+### Output & Debugging
 
-1. **Godot Plugin** runs a WebSocket server inside the editor (port 6970)
-2. **Go MCP Server** connects to Godot via WebSocket and exposes tools via MCP protocol
-3. **Claude Code** sends tool calls over stdio to the MCP server
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_output` | Get Output panel content | `clear` (optional) - mark position for incremental reads |
+| `get_debugger_errors` | Get Debugger Errors tab | none |
+| `get_debugger_stack_trace` | Get stack trace when paused on error | none |
+| `get_debugger_locals` | Get local variables for a stack frame | `frame_index` (optional) - 0=top frame |
+
+## Example Usage
+
+With Claude Code:
+- "Run the main scene for 5 seconds and show me the output"
+- "What errors are in the debugger?"
+- "Show me the local variables in the current stack frame"
+
+Direct WebSocket testing:
+```bash
+wscat -c ws://localhost:6970
+
+# run main scene
+{"id":1,"method":"run_main_scene"}
+
+# run with timeout
+{"id":2,"method":"run_main_scene","params":{"timeout_seconds":5}}
+
+# get output
+{"id":3,"method":"get_output"}
+
+# get stack trace (when paused on error)
+{"id":4,"method":"get_debugger_stack_trace"}
+
+# get locals for frame 0
+{"id":5,"method":"get_debugger_locals","params":{"frame_index":0}}
+```
+
+## Architecture
 
 ```
 ┌─────────────────────┐     stdio      ┌─────────────────────┐
 │   Claude Code       │◄──────────────►│    Go MCP Server    │
-│   (MCP Client)      │                │   (stdio transport) │
+│   (MCP Client)      │                │   (godot-mcp)       │
 └─────────────────────┘                └──────────┬──────────┘
                                                   │ WebSocket
                                                   │ ws://localhost:6970
                                        ┌──────────▼──────────┐
                                        │  Godot EditorPlugin │
-                                       │  (WebSocket Server) │
+                                       │  (addons/godot_mcp) │
                                        └─────────────────────┘
 ```
 
-## Output Capture
+## Debugger Details
 
-The plugin captures runtime output from your game:
-- `print()` statements
-- `push_error()` and `push_warning()` calls
-- Stack traces on errors
+### Output Capture (`get_output`)
+Reads directly from Godot's Output panel. Captures:
+- `print()` statements from running game
+- `push_error()` / `push_warning()` calls
+- Editor messages
 
-Output is buffered and can be retrieved with the `get_output` tool.
+### Errors Tab (`get_debugger_errors`)
+Returns warnings and errors with source file/line info. Available while game is running or paused.
 
-**Note**: Only captures output from the running game, not editor-side output (tool scripts, plugin code, etc.)
+### Stack Trace (`get_debugger_stack_trace`)
+Returns error message and call stack. Only populated when game is paused on an error.
+
+### Local Variables (`get_debugger_locals`)
+Returns all local variables for the selected stack frame. Use `frame_index` to select which frame (0 = where error occurred, higher = caller frames).
+
+**Note**: Debugger locals require clicking a stack frame in Godot's UI first, or using `frame_index` to select programmatically.
 
 ## Configuration
 
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
 | `GODOT_MCP_URL` | `ws://localhost:6970` | Godot WebSocket URL |
 
-### Godot Plugin
-
-The plugin uses port 6970 by default (configurable in `mcp_server.gd`).
+The plugin port is configured in `addons/godot_mcp/mcp_server.gd` (default: 6970).
 
 ## Requirements
 
 - Godot 4.5+
 - Go 1.21+
-- Claude Code with MCP support
+- Claude Code with MCP support (or any MCP client)
 
 ## Troubleshooting
 
 **"not connected to Godot editor"**
-- Make sure the Godot editor is running with the plugin enabled
-- Check that port 6970 is not blocked/in use
+- Ensure Godot is running with the plugin enabled
+- Check port 6970 is available
 
-**No output captured**
-- Output capture only works when a scene is running
-- Make sure your game code uses `print()`, not editor-side logging
+**Empty output**
+- Output capture requires a scene to be running
+- Use `get_output` after `run_main_scene`
+
+**Empty stack trace / locals**
+- These only populate when the game is paused on an error
+- Trigger an error (e.g., null reference) to test
 
 **Connection refused**
-- Verify the plugin is enabled in Project Settings → Plugins
-- Check Godot's output panel for plugin startup messages
-
+- Verify plugin is enabled in Project Settings → Plugins
+- Look for `[GodotMCP]` messages in Godot's Output panel

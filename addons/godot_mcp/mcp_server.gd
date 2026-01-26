@@ -105,23 +105,6 @@ func _find_all_nodes(node: Node) -> Array[Node]:
 	return results
 
 
-func _dump_node_tree(node: Node, depth: int, output: PackedStringArray) -> void:
-	var indent := "  ".repeat(depth)
-	var info := "%s%s [%s]" % [indent, node.name, node.get_class()]
-	# add value info for common types
-	if node is Label:
-		info += " text='%s'" % node.text
-	elif node is LineEdit:
-		info += " text='%s'" % node.text
-	elif node is Button:
-		info += " text='%s'" % node.text
-	elif node.has_method("get_value"):
-		info += " value=%s" % str(node.get_value())
-	output.append(info)
-	for child in node.get_children():
-		_dump_node_tree(child, depth + 1, output)
-
-
 func _process(_delta: float) -> void:
 	_accept_new_connections()
 	_process_pending_connections()

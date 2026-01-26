@@ -87,7 +87,10 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// get_debugger_locals - get local variables for selected stack frame
 	s.AddTool(
 		mcp.NewTool("get_debugger_locals",
-			mcp.WithDescription("Get local variables from Godot Debugger (requires clicking a stack frame in the UI first)"),
+			mcp.WithDescription("Get local variables from Godot Debugger for a specific stack frame"),
+			mcp.WithNumber("frame_index",
+				mcp.Description("Stack frame index (0=top/current, higher=callers). Defaults to currently selected frame."),
+			),
 		),
 		makeGetLocals(client),
 	)
@@ -267,13 +270,21 @@ func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		result, err := client.GetLocals(ctx)
+		frameIndex := -1 // default: use currently selected frame
+		args := req.GetArguments()
+		if args != nil {
+			if v, ok := args["frame_index"].(float64); ok {
+				frameIndex = int(v)
+			}
+		}
+
+		result, err := client.GetLocals(ctx, frameIndex)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to get locals: %v", err)), nil
 		}
 
 		if result.Count == 0 {
-			return mcp.NewToolResultText("No locals (click a stack frame in the debugger first)"), nil
+			return mcp.NewToolResultText("No locals (game not paused on error, or no frame selected)"), nil
 		}
 
 		// format as readable text

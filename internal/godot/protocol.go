@@ -56,6 +56,11 @@ type GetOutputParams struct {
 	NewOnly bool `json:"new_only"`
 }
 
+// GetLocalsParams for get_debugger_locals method
+type GetLocalsParams struct {
+	FrameIndex int `json:"frame_index"`
+}
+
 // OutputResult from get_output
 type OutputResult struct {
 	Output      string `json:"output"`

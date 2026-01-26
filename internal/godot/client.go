@@ -377,9 +377,10 @@ func (c *Client) GetStackTrace(ctx context.Context) (*StackTraceResult, error) {
 	return &result, nil
 }
 
-// GetLocals fetches local variables from debugger (requires clicking a stack frame first)
-func (c *Client) GetLocals(ctx context.Context) (*LocalsResult, error) {
-	resp, err := c.sendRequest(ctx, "get_debugger_locals", nil)
+// GetLocals fetches local variables from debugger for a specific stack frame
+func (c *Client) GetLocals(ctx context.Context, frameIndex int) (*LocalsResult, error) {
+	params := GetLocalsParams{FrameIndex: frameIndex}
+	resp, err := c.sendRequest(ctx, "get_debugger_locals", params)
 	if err != nil {
 		return nil, err
 	}
