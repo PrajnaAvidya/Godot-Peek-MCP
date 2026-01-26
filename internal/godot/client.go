@@ -340,8 +340,8 @@ func (c *Client) GetStatus(ctx context.Context) (*StatusResult, error) {
 }
 
 // GetOutputFromGodot fetches output buffer from Godot directly
-func (c *Client) GetOutputFromGodot(ctx context.Context, clear bool) (*OutputResult, error) {
-	resp, err := c.sendRequest(ctx, "get_output", GetOutputParams{Clear: clear})
+func (c *Client) GetOutputFromGodot(ctx context.Context, clear bool, newOnly bool) (*OutputResult, error) {
+	resp, err := c.sendRequest(ctx, "get_output", GetOutputParams{Clear: clear, NewOnly: newOnly})
 	if err != nil {
 		return nil, err
 	}

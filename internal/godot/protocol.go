@@ -52,19 +52,22 @@ type RunSceneParams struct {
 
 // GetOutputParams for get_output method
 type GetOutputParams struct {
-	Clear bool `json:"clear"`
+	Clear   bool `json:"clear"`
+	NewOnly bool `json:"new_only"`
 }
 
 // StatusResult from get_status
 type StatusResult struct {
-	Playing          bool `json:"playing"`
-	OutputBufferSize int  `json:"output_buffer_size"`
+	Playing         bool `json:"playing"`
+	OutputAvailable bool `json:"output_available"`
+	OutputLength    int  `json:"output_length"`
 }
 
 // OutputResult from get_output
 type OutputResult struct {
-	Output []OutputNotification `json:"output"`
-	Count  int                  `json:"count"`
+	Output      string `json:"output"`
+	Length      int    `json:"length"`
+	TotalLength int    `json:"total_length"`
 }
 
 // GenericResult for simple success responses

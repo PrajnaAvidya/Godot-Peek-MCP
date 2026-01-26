@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -145,7 +144,12 @@ func makeGetStatus(client *godot.Client) server.ToolHandlerFunc {
 			playingStr = "running"
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Scene: %s\nOutput buffer: %d lines", playingStr, status.OutputBufferSize)), nil
+		outputStr := "not available"
+		if status.OutputAvailable {
+			outputStr = fmt.Sprintf("%d chars", status.OutputLength)
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Scene: %s\nOutput: %s", playingStr, outputStr)), nil
 	}
 }
 
@@ -156,40 +160,26 @@ func makeGetOutput(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		clear := false
+		newOnly := false
 		args := req.GetArguments()
 		if args != nil {
-			if clearVal, ok := args["clear"]; ok {
-				if b, ok := clearVal.(bool); ok {
-					clear = b
-				}
+			if v, ok := args["clear"].(bool); ok {
+				clear = v
+			}
+			if v, ok := args["new_only"].(bool); ok {
+				newOnly = v
 			}
 		}
 
-		// get from local buffer (populated by notifications)
-		output := client.GetOutput(clear)
-
-		if len(output) == 0 {
-			return mcp.NewToolResultText("No output captured"), nil
+		output, err := client.GetOutputFromGodot(ctx, clear, newOnly)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get output: %v", err)), nil
 		}
 
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Captured %d lines:\n\n", len(output)))
-
-		for _, line := range output {
-			prefix := ""
-			switch line.Type {
-			case "error":
-				prefix = "[ERROR] "
-			case "warning":
-				prefix = "[WARN] "
-			case "stack":
-				prefix = "[STACK] "
-			}
-			sb.WriteString(prefix)
-			sb.WriteString(line.Message)
-			sb.WriteString("\n")
+		if output.Length == 0 {
+			return mcp.NewToolResultText("No output"), nil
 		}
 
-		return mcp.NewToolResultText(sb.String()), nil
+		return mcp.NewToolResultText(output.Output), nil
 	}
 }

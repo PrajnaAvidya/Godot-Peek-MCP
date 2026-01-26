@@ -2,12 +2,14 @@
 extends Node
 
 const PORT := 6970
-const MAX_OUTPUT_BUFFER := 1000
 
 var tcp_server: TCPServer
 var clients: Array[WebSocketPeer] = []
 var pending_connections: Array[StreamPeerTCP] = []
-var output_buffer: Array[Dictionary] = []
+
+# output dock reference
+var output_rich_text: RichTextLabel = null
+var last_output_length: int = 0
 
 
 func _ready() -> void:
@@ -17,6 +19,34 @@ func _ready() -> void:
 		push_error("[GodotMCP] Failed to start TCP server on port %d: %s" % [PORT, error_string(err)])
 		return
 	print("[GodotMCP] WebSocket server listening on ws://localhost:%d" % PORT)
+
+	# find the output dock
+	call_deferred("_find_output_dock")
+
+
+func _find_output_dock() -> void:
+	var base := EditorInterface.get_base_control()
+	var rich_texts := _find_all_by_class(base, "RichTextLabel")
+
+	# look for the EditorLog's RichTextLabel
+	for rt: RichTextLabel in rich_texts:
+		var path: String = str(rt.get_path())
+		if "EditorLog" in path:
+			output_rich_text = rt
+			last_output_length = rt.get_parsed_text().length()
+			print("[GodotMCP] Found Output dock: %s" % path)
+			return
+
+	push_warning("[GodotMCP] Could not find EditorLog RichTextLabel")
+
+
+func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
+	var results: Array[Node] = []
+	if node.get_class() == target_class:
+		results.append(node)
+	for child in node.get_children():
+		results.append_array(_find_all_by_class(child, target_class))
+	return results
 
 
 func _process(_delta: float) -> void:
@@ -155,62 +185,54 @@ func _stop_scene(ws: WebSocketPeer, id: Variant) -> void:
 
 
 func _get_status(ws: WebSocketPeer, id: Variant) -> void:
+	var output_available := output_rich_text != null
+	var output_length := 0
+	if output_rich_text:
+		output_length = output_rich_text.get_parsed_text().length()
+
 	_send_result(ws, id, {
 		"playing": EditorInterface.is_playing_scene(),
-		"output_buffer_size": output_buffer.size()
+		"output_available": output_available,
+		"output_length": output_length
 	})
 
 
 func _get_output(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	if not output_rich_text:
+		_send_error(ws, id, -32000, "Output dock not found")
+		return
+
+	# use get_parsed_text() - the text property and get_text() return empty
+	# because the Output panel uses append_text() with BBCode
+	var full_text := output_rich_text.get_parsed_text()
+	var new_only: bool = params.get("new_only", false)
 	var clear: bool = params.get("clear", false)
-	var result := {
-		"output": output_buffer.duplicate(),
-		"count": output_buffer.size()
-	}
+
+	var output_text: String
+	if new_only:
+		# return only text added since last call
+		output_text = full_text.substr(last_output_length)
+	else:
+		output_text = full_text
 
 	if clear:
-		output_buffer.clear()
+		last_output_length = full_text.length()
 
-	_send_result(ws, id, result)
+	_send_result(ws, id, {
+		"output": output_text,
+		"length": output_text.length(),
+		"total_length": full_text.length()
+	})
 
 
 func _send_result(ws: WebSocketPeer, id: Variant, result: Dictionary) -> void:
 	var response := {"id": id, "result": result}
-	var json := JSON.stringify(response)
-	print("[GodotMCP] Sending response: %s" % json.substr(0, 200))
-	ws.send_text(json)
+	ws.send_text(JSON.stringify(response))
 
 
 func _send_error(ws: WebSocketPeer, id: Variant, code: int, message: String) -> void:
 	var response := {"id": id, "error": {"code": code, "message": message}}
-	var json := JSON.stringify(response)
-	print("[GodotMCP] Sending error: %s" % json)
-	ws.send_text(json)
-
-
-# called by output_capture.gd to add captured output
-func add_output(type: String, message: String, timestamp: float = -1.0) -> void:
-	if timestamp < 0:
-		timestamp = Time.get_unix_time_from_system()
-
-	var entry := {
-		"type": type,
-		"message": message,
-		"timestamp": timestamp
-	}
-
-	output_buffer.append(entry)
-
-	# trim buffer if too large
-	while output_buffer.size() > MAX_OUTPUT_BUFFER:
-		output_buffer.pop_front()
-
-	# broadcast to all connected clients
-	var notification := {"method": "output", "params": entry}
-	var json := JSON.stringify(notification)
-	for ws in clients:
-		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			ws.send_text(json)
+	ws.send_text(JSON.stringify(response))
 
 
 func _exit_tree() -> void:
