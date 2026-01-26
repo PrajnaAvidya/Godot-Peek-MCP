@@ -63,10 +63,16 @@ type OutputResult struct {
 	TotalLength int    `json:"total_length"`
 }
 
-// DebugErrorsResult from get_debug_errors
+// DebugErrorsResult from get_debugger_errors
 type DebugErrorsResult struct {
 	Errors string `json:"errors"`
 	Length int    `json:"length"`
+}
+
+// StackTraceResult from get_debugger_stack_trace
+type StackTraceResult struct {
+	StackTrace string `json:"stack_trace"`
+	Length     int    `json:"length"`
 }
 
 // GenericResult for simple success responses

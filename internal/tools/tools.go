@@ -75,6 +75,14 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetDebugErrors(client),
 	)
+
+	// get_debugger_stack_trace - get stack trace on runtime error
+	s.AddTool(
+		mcp.NewTool("get_debugger_stack_trace",
+			mcp.WithDescription("Get stack trace from Godot Debugger (populated when game crashes/pauses on error)"),
+		),
+		makeGetStackTrace(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -223,5 +231,24 @@ func makeGetDebugErrors(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(result.Errors), nil
+	}
+}
+
+func makeGetStackTrace(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.GetStackTrace(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get stack trace: %v", err)), nil
+		}
+
+		if result.Length == 0 {
+			return mcp.NewToolResultText("No stack trace (game not paused on error)"), nil
+		}
+
+		return mcp.NewToolResultText(result.StackTrace), nil
 	}
 }

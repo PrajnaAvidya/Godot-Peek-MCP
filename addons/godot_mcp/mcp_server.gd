@@ -14,6 +14,7 @@ var last_output_length: int = 0
 # debugger dock references
 var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
+var debugger_stack_frames: Tree = null
 
 
 func _ready() -> void:
@@ -57,13 +58,22 @@ func _find_debugger_dock() -> void:
 			print("[GodotMCP] Found Debugger Errors tree: %s" % path)
 			break
 
-	# also find Stack Trace RichTextLabel for crash info
+	# find Stack Trace RichTextLabel (error message header)
 	var rich_texts := _find_all_by_class(base, "RichTextLabel")
 	for rt: RichTextLabel in rich_texts:
 		var path: String = str(rt.get_path())
 		if "EditorDebuggerNode" in path and "Stack Trace" in path:
 			debugger_stack_trace = rt
-			print("[GodotMCP] Found Debugger Stack Trace: %s" % path)
+			print("[GodotMCP] Found Debugger Stack Trace message: %s" % path)
+			break
+
+	# find Stack Trace Tree (actual stack frames)
+	# look for Tree inside Stack Trace/HSplitContainer/.../VBoxContainer
+	for tree: Tree in trees:
+		var path: String = str(tree.get_path())
+		if "Stack Trace" in path and "VBoxContainer" in path:
+			debugger_stack_frames = tree
+			print("[GodotMCP] Found Debugger Stack Frames tree: %s" % path)
 			break
 
 	if not debugger_errors_tree and not debugger_stack_trace:
@@ -169,6 +179,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_output(ws, id, params)
 		"get_debugger_errors":
 			_get_debugger_errors(ws, id)
+		"get_debugger_stack_trace":
+			_get_debugger_stack_trace(ws, id)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -254,6 +266,35 @@ func _get_debugger_errors(ws: WebSocketPeer, id: Variant) -> void:
 	})
 
 
+func _get_debugger_stack_trace(ws: WebSocketPeer, id: Variant) -> void:
+	if not debugger_stack_trace and not debugger_stack_frames:
+		_send_error(ws, id, -32000, "Debugger Stack Trace not found")
+		return
+
+	# get error message from RichTextLabel
+	var error_msg := ""
+	if debugger_stack_trace:
+		error_msg = debugger_stack_trace.get_parsed_text()
+
+	# get stack frames from Tree
+	var frames := ""
+	if debugger_stack_frames:
+		frames = _get_tree_text(debugger_stack_frames)
+
+	var combined := ""
+	if not error_msg.is_empty():
+		combined += error_msg
+	if not frames.is_empty():
+		if not combined.is_empty():
+			combined += "\n\nStack frames:\n"
+		combined += frames
+
+	_send_result(ws, id, {
+		"stack_trace": combined,
+		"length": combined.length()
+	})
+
+
 func _get_tree_text(tree: Tree) -> String:
 	var root := tree.get_root()
 	if not root:
@@ -286,13 +327,20 @@ func _get_tree_item_text(item: TreeItem, depth: int) -> String:
 
 
 func _send_result(ws: WebSocketPeer, id: Variant, result: Dictionary) -> void:
-	var response := {"id": id, "result": result}
+	var response := {"id": _normalize_id(id), "result": result}
 	ws.send_text(JSON.stringify(response))
 
 
 func _send_error(ws: WebSocketPeer, id: Variant, code: int, message: String) -> void:
-	var response := {"id": id, "error": {"code": code, "message": message}}
+	var response := {"id": _normalize_id(id), "error": {"code": code, "message": message}}
 	ws.send_text(JSON.stringify(response))
+
+
+# convert float ids back to int if they're whole numbers (JSON parser makes all numbers float)
+func _normalize_id(id: Variant) -> Variant:
+	if id is float and id == floorf(id):
+		return int(id)
+	return id
 
 
 func _exit_tree() -> void:

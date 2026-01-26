@@ -357,3 +357,22 @@ func (c *Client) GetDebugErrors(ctx context.Context) (*DebugErrorsResult, error)
 	}
 	return &result, nil
 }
+
+// GetStackTrace fetches stack trace from debugger (populated on runtime errors)
+func (c *Client) GetStackTrace(ctx context.Context) (*StackTraceResult, error) {
+	resp, err := c.sendRequest(ctx, "get_debugger_stack_trace", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result StackTraceResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
