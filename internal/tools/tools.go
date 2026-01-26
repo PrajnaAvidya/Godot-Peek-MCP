@@ -94,6 +94,14 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetLocals(client),
 	)
+
+	// get_remote_scene_tree - get instantiated node tree from running game
+	s.AddTool(
+		mcp.NewTool("get_remote_scene_tree",
+			mcp.WithDescription("Get instantiated node tree from running game (requires game to be running)"),
+		),
+		makeGetRemoteSceneTree(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -294,5 +302,24 @@ func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(output), nil
+	}
+}
+
+func makeGetRemoteSceneTree(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.GetRemoteSceneTree(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get remote scene tree: %v", err)), nil
+		}
+
+		if result.Length == 0 {
+			return mcp.NewToolResultText("No scene tree (game not running)"), nil
+		}
+
+		return mcp.NewToolResultText(result.Tree), nil
 	}
 }

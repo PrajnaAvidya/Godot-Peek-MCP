@@ -396,3 +396,22 @@ func (c *Client) GetLocals(ctx context.Context, frameIndex int) (*LocalsResult, 
 	}
 	return &result, nil
 }
+
+// GetRemoteSceneTree fetches instantiated node tree from running game
+func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, error) {
+	resp, err := c.sendRequest(ctx, "get_remote_scene_tree", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result SceneTreeResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}

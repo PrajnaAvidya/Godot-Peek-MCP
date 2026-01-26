@@ -17,6 +17,10 @@ var debugger_stack_trace: RichTextLabel = null
 var debugger_stack_frames: Tree = null
 var debugger_inspector: Control = null  # EditorDebuggerInspector
 
+# remote scene tree reference
+var remote_scene_tree: Tree = null
+
+
 
 func _ready() -> void:
 	tcp_server = TCPServer.new()
@@ -29,6 +33,7 @@ func _ready() -> void:
 	# find the output and debugger docks
 	call_deferred("_find_output_dock")
 	call_deferred("_find_debugger_dock")
+	# note: remote scene tree found lazily when requested (only exists when game running)
 
 
 func _find_output_dock() -> void:
@@ -87,6 +92,26 @@ func _find_debugger_dock() -> void:
 
 	if not debugger_errors_tree and not debugger_stack_trace:
 		push_warning("[GodotPeek] Could not find Debugger controls")
+
+
+
+
+func _find_remote_scene_tree() -> void:
+	var base := EditorInterface.get_base_control()
+	var all_nodes := _find_all_nodes(base)
+
+	# EditorDebuggerTree IS the remote scene tree (inherits from Tree)
+	for node in all_nodes:
+		if node.get_class() == "EditorDebuggerTree":
+			remote_scene_tree = node as Tree
+			var root := remote_scene_tree.get_root()
+			if root:
+				print("[GodotPeek] Found remote scene tree: %s (root: '%s', children: %d)" % [node.get_path(), root.get_text(0), root.get_child_count()])
+			else:
+				print("[GodotPeek] Found remote scene tree: %s (no root yet)" % node.get_path())
+			return
+
+	push_warning("[GodotPeek] Could not find EditorDebuggerTree (is game running?)")
 
 
 func _find_all_by_class(node: Node, target_class: String) -> Array[Node]:
@@ -199,6 +224,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_debugger_stack_trace(ws, id)
 		"get_debugger_locals":
 			_get_debugger_locals(ws, id, params)
+		"get_remote_scene_tree":
+			_get_remote_scene_tree(ws, id)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -340,6 +367,21 @@ func _get_debugger_locals(ws: WebSocketPeer, id: Variant, params: Dictionary) ->
 	})
 
 
+func _get_remote_scene_tree(ws: WebSocketPeer, id: Variant) -> void:
+	# find fresh each time since Remote tab only exists when game is running
+	_find_remote_scene_tree()
+
+	if not remote_scene_tree:
+		_send_error(ws, id, -32000, "Remote scene tree not found (is game running?)")
+		return
+
+	var tree_text := _get_scene_tree_text(remote_scene_tree)
+	_send_result(ws, id, {
+		"tree": tree_text,
+		"length": tree_text.length()
+	})
+
+
 func _get_tree_item_at_index(root: TreeItem, index: int) -> TreeItem:
 	var current_index := 0
 	for child in root.get_children():
@@ -436,6 +478,44 @@ func _get_tree_text(tree: Tree) -> String:
 	if not root:
 		return ""
 	return _get_tree_item_text(root, 0)
+
+
+func _get_scene_tree_text(tree: Tree) -> String:
+	var root := tree.get_root()
+	if not root:
+		return ""
+	return _get_scene_tree_item_text(root, 0)
+
+
+func _get_scene_tree_item_text(item: TreeItem, depth: int) -> String:
+	var result := ""
+	var indent := "  ".repeat(depth)
+
+	# get node name from column 0
+	var node_name := item.get_text(0)
+	if not node_name.is_empty():
+		# get node type from tooltip or metadata if available
+		var node_type := ""
+		var tooltip := item.get_tooltip_text(0)
+		if not tooltip.is_empty():
+			# tooltip often contains "NodeName (Type)" or just type info
+			var paren_pos := tooltip.find("(")
+			if paren_pos != -1:
+				var end_paren := tooltip.find(")", paren_pos)
+				if end_paren != -1:
+					node_type = tooltip.substr(paren_pos + 1, end_paren - paren_pos - 1)
+
+		# build output line
+		if not node_type.is_empty():
+			result += indent + node_name + " (" + node_type + ")\n"
+		else:
+			result += indent + node_name + "\n"
+
+	# recurse children
+	for child in item.get_children():
+		result += _get_scene_tree_item_text(child, depth + 1)
+
+	return result
 
 
 func _get_tree_item_text(item: TreeItem, depth: int) -> String:

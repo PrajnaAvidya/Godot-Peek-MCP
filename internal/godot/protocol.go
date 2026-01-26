@@ -99,3 +99,9 @@ type GenericResult struct {
 	Action    string `json:"action,omitempty"`
 	ScenePath string `json:"scene_path,omitempty"`
 }
+
+// SceneTreeResult from get_remote_scene_tree
+type SceneTreeResult struct {
+	Tree   string `json:"tree"`
+	Length int    `json:"length"`
+}

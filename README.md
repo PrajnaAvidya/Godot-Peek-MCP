@@ -7,6 +7,7 @@ MCP (Model Context Protocol) server for peeking into Godot 4.5+ editor runtime. 
 - **Scene Control**: Run main/current/specific scenes, stop the game
 - **Output Capture**: Read the Output panel (print statements, errors, warnings)
 - **Debugger Integration**: Get errors, stack traces, and local variables when paused
+- **Runtime Inspection**: Get the instantiated node tree from the running game
 
 ## Quick Start
 
@@ -31,7 +32,7 @@ You should see:
 [GodotPeek] WebSocket server listening on ws://localhost:6970
 ```
 
-### 3. Register with Claude Code
+### 3. Register with Claude Code (or other MCP)
 
 ```bash
 claude mcp add godot-peek /path/to/godot-peek-mcp/godot-peek-mcp
@@ -58,33 +59,7 @@ Restart Claude Code or run `/mcp` to reload.
 | `get_debugger_errors` | Get Debugger Errors tab | none |
 | `get_debugger_stack_trace` | Get stack trace when paused on error | none |
 | `get_debugger_locals` | Get local variables for a stack frame | `frame_index` (optional) - 0=top frame |
-
-## Example Usage
-
-With Claude Code:
-- "Run the main scene for 5 seconds and show me the output"
-- "What errors are in the debugger?"
-- "Show me the local variables in the current stack frame"
-
-Direct WebSocket testing:
-```bash
-wscat -c ws://localhost:6970
-
-# run main scene
-{"id":1,"method":"run_main_scene"}
-
-# run with timeout
-{"id":2,"method":"run_main_scene","params":{"timeout_seconds":5}}
-
-# get output
-{"id":3,"method":"get_output"}
-
-# get stack trace (when paused on error)
-{"id":4,"method":"get_debugger_stack_trace"}
-
-# get locals for frame 0
-{"id":5,"method":"get_debugger_locals","params":{"frame_index":0}}
-```
+| `get_remote_scene_tree` | Get instantiated node tree from running game | none |
 
 ## Architecture
 
@@ -110,15 +85,16 @@ Reads directly from Godot's Output panel. Captures:
 - Editor messages
 
 ### Errors Tab (`get_debugger_errors`)
-Returns warnings and errors with source file/line info. Available while game is running or paused.
+Returns warnings and errors with source file/line info.
 
 ### Stack Trace (`get_debugger_stack_trace`)
-Returns error message and call stack. Only populated when game is paused on an error.
+Returns error message and call stack.
 
 ### Local Variables (`get_debugger_locals`)
 Returns all local variables for the selected stack frame. Use `frame_index` to select which frame (0 = where error occurred, higher = caller frames).
 
-**Note**: Debugger locals require clicking a stack frame in Godot's UI first, or using `frame_index` to select programmatically.
+### Remote Scene Tree (`get_remote_scene_tree`)
+Returns the instantiated node tree from the running game. Shows "root" at top with autoloads and the active scene hierarchy. Only available while game is running.
 
 ## Configuration
 
@@ -132,22 +108,4 @@ The plugin port is configured in `addons/godot_mcp/mcp_server.gd` (default: 6970
 
 - Godot 4.5+
 - Go 1.21+
-- Claude Code with MCP support (or any MCP client)
-
-## Troubleshooting
-
-**"not connected to Godot editor"**
-- Ensure Godot is running with the plugin enabled
-- Check port 6970 is available
-
-**Empty output**
-- Output capture requires a scene to be running
-- Use `get_output` after `run_main_scene`
-
-**Empty stack trace / locals**
-- These only populate when the game is paused on an error
-- Trigger an error (e.g., null reference) to test
-
-**Connection refused**
-- Verify plugin is enabled in Project Settings → Plugins
-- Look for `[GodotPeek]` messages in Godot's Output panel
+- Claude Code (or any MCP client)
