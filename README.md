@@ -1,18 +1,26 @@
 # Godot Peek MCP
 
-MCP (Model Context Protocol) server for peeking into Godot 4.5+ editor runtime. Run scenes, capture output, inspect debugger state - all programmatically.
+MCP server for peeking into Godot 4.5+ editor runtime. Run scenes, capture output, inspect debugger state.
+
+## Why Another Godot MCP?
+
+Other Godot MCPs wrap editor actions that LLMs can already do. Claude can edit `.tscn`, `.tres`, and `.gd` files directly; it doesn't need a tool to "add a node" when it can just edit the scene file.
+
+This MCP focuses on **runtime visibility**: output panel, debugger state, screenshots. The stuff that requires looking at the screen.
 
 ## Features
 
 - **Scene Control**: Run main/current/specific scenes, stop the game
-- **Output Capture**: Read the Output panel (print statements, errors, warnings)
-- **Debugger Integration**: Get errors, stack traces, and local variables when paused
-- **Runtime Inspection**: Get the instantiated node tree from the running game
-- **Screenshots**: Capture editor viewports or running game (requires vision capability)
+- **Output Capture**: Read the Output panel
+- **Debugger Integration**: Errors, stack traces, local variables
+- **Runtime Inspection**: Node tree and properties from running game
+- **Screenshots**: Editor viewports or running game
 
 ## Quick Start
 
-### 1. Build the MCP Server
+### 1. Get the MCP Server
+
+Download a binary from [Releases](https://github.com/PrajnaAvidya/godot-peek-mcp/releases), or build from source:
 
 ```bash
 go build -o godot-peek-mcp ./cmd/godot-peek-mcp
@@ -20,20 +28,14 @@ go build -o godot-peek-mcp ./cmd/godot-peek-mcp
 
 ### 2. Install Godot Plugin
 
-Copy `addons/godot_mcp` to your Godot project:
+Copy `addons/godot_mcp` to your Godot project's addons folder, then enable in Project Settings → Plugins.
 
-```bash
-cp -r addons/godot_mcp /path/to/your/godot/project/addons/
-```
-
-Enable in Godot: Project → Project Settings → Plugins → Enable "Godot Peek MCP"
-
-You should see:
+You should see in Output:
 ```
 [GodotPeek] WebSocket server listening on ws://localhost:6970
 ```
 
-### 3. Register with Claude Code (or other MCP)
+### 3. Register with MCP Client
 
 ```bash
 claude mcp add godot-peek /path/to/godot-peek-mcp/godot-peek-mcp
@@ -47,8 +49,8 @@ Restart Claude Code or run `/mcp` to reload.
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `run_main_scene` | Run project's main scene (F5) | `timeout_seconds` (optional) - auto-stop after N seconds |
-| `run_scene` | Run a specific scene | `scene_path` (required), `timeout_seconds` (optional) |
+| `run_main_scene` | Run main scene (F5) | `timeout_seconds` (optional) |
+| `run_scene` | Run a specific scene | `scene_path`, `timeout_seconds` (optional) |
 | `run_current_scene` | Run currently open scene | `timeout_seconds` (optional) |
 | `stop_scene` | Stop the running game | none |
 
@@ -56,18 +58,18 @@ Restart Claude Code or run `/mcp` to reload.
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_output` | Get Output panel content | `clear` (optional) - mark position for incremental reads |
+| `get_output` | Get Output panel content | `clear` (optional) |
 | `get_debugger_errors` | Get Debugger Errors tab | none |
-| `get_debugger_stack_trace` | Get stack trace when paused on error | none |
-| `get_debugger_locals` | Get local variables for a stack frame | `frame_index` (optional) - 0=top frame |
-| `get_remote_scene_tree` | Get instantiated node tree from running game | none |
-| `get_remote_node_properties` | Get properties of a specific node from running game | `node_path` (required) - path like /root/game/Player |
+| `get_debugger_stack_trace` | Get stack trace when paused | none |
+| `get_debugger_locals` | Get local variables | `frame_index` (optional, 0=top) |
+| `get_remote_scene_tree` | Get node tree from running game | none |
+| `get_remote_node_properties` | Get node properties | `node_path` (e.g. /root/game/Player) |
 
 ### Screenshots
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_screenshot` | Capture screenshot of editor or game | `target` (required) - "editor" or "game" |
+| `get_screenshot` | Capture editor or game | `target`: "editor" or "game" |
 
 ## Architecture
 
@@ -84,55 +86,26 @@ Restart Claude Code or run `/mcp` to reload.
                                        └─────────────────────┘
 ```
 
-## Debugger Details
+## Notes
 
-### Output Capture (`get_output`)
-Reads directly from Godot's Output panel. Captures:
-- `print()` statements from running game
-- `push_error()` / `push_warning()` calls
-- Editor messages
+**Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.
 
-### Errors Tab (`get_debugger_errors`)
-Returns warnings and errors with source file/line info.
+**Debugger tools** (`get_debugger_errors`, `get_debugger_stack_trace`, `get_debugger_locals`) pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top).
 
-### Stack Trace (`get_debugger_stack_trace`)
-Returns error message and call stack.
+**Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
 
-### Local Variables (`get_debugger_locals`)
-Returns all local variables for the selected stack frame. Use `frame_index` to select which frame (0 = where error occurred, higher = caller frames).
-
-### Remote Scene Tree (`get_remote_scene_tree`)
-Returns the instantiated node tree from the running game. Shows "root" at top with autoloads and the active scene hierarchy. Only available while game is running.
-
-### Remote Node Properties (`get_remote_node_properties`)
-Returns all properties of a specific node in the running game. Use `node_path` to specify which node (e.g., `/root/game/Player`). Returns property names, values, and types. Only available while game is running.
-
-### Screenshots (`get_screenshot`)
-
-Captures screenshots that Claude Code can view (requires vision capability).
-
-**Editor screenshots** (`target="editor"`):
-- Captures 2D and/or 3D editor viewports (whichever are active)
-- Works immediately, no extra setup required
-- Saved to `/tmp/godot_peek_editor_screenshot.png`
-
-**Game screenshots** (`target="game"`):
-- Captures the running game's viewport
-- Autoload is added automatically when plugin is enabled
-- Saved to `/tmp/godot_peek_game_screenshot.png`
-
-The plugin automatically adds a `ScreenshotListener` autoload to your project. This runs a UDP server (port 6971) in your game that responds to screenshot requests.
+**Screenshots** save to `/tmp/godot_peek_*.png`. Editor screenshots capture active 2D/3D viewports. Game screenshots require the autoload that the plugin adds automatically.
 
 ## Configuration
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `GODOT_MCP_URL` | `ws://localhost:6970` | Godot WebSocket URL |
+| `GODOT_MCP_URL` | `ws://localhost:6970` | WebSocket URL |
 
-The plugin port is configured in `addons/godot_mcp/mcp_server.gd` (default: 6970).
+Plugin port is in `addons/godot_mcp/mcp_server.gd`.
 
 ## Requirements
 
 - Godot 4.5+
-- Go 1.21+
-- Claude Code (or any MCP client)
+- Any MCP client
+- Go 1.21+ (only if building from source)
