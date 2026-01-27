@@ -118,18 +118,10 @@ Captures screenshots that Claude Code can view (requires vision capability).
 
 **Game screenshots** (`target="game"`):
 - Captures the running game's viewport
-- Requires adding an autoload to your project (see below)
+- Autoload is added automatically when plugin is enabled
 - Saved to `/tmp/godot_peek_game_screenshot.png`
 
-#### Game Screenshot Setup
-
-To enable game screenshots, add the screenshot listener as an autoload:
-
-1. In Godot: Project → Project Settings → Autoload
-2. Add `addons/godot_mcp/screenshot_listener.gd` with name "ScreenshotListener"
-3. Run your game - screenshots will now work
-
-The listener runs a UDP server (port 6971) that responds to screenshot requests from the editor plugin.
+The plugin automatically adds a `ScreenshotListener` autoload to your project. This runs a UDP server (port 6971) in your game that responds to screenshot requests.
 
 ## Configuration
 
