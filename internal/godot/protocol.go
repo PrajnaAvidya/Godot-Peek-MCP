@@ -114,6 +114,7 @@ type GenericResult struct {
 	ScenePath     string `json:"scene_path,omitempty"`
 	ErrorDetected bool   `json:"error_detected,omitempty"`
 	StackTrace    string `json:"stack_trace,omitempty"`
+	Warnings      string `json:"warnings,omitempty"` // warnings from debugger errors tree (doesn't affect success)
 }
 
 // SceneTreeResult from get_remote_scene_tree

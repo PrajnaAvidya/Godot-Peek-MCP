@@ -208,12 +208,16 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		timeout := getTimeoutArg(req)
+		msg := "Main scene started successfully"
 		if timeout > 0 {
 			scheduleAutoStop(client, timeout)
-			return mcp.NewToolResultText(fmt.Sprintf("Main scene started (will auto-stop in %.1fs)", timeout)), nil
+			msg = fmt.Sprintf("Main scene started (will auto-stop in %.1fs)", timeout)
+		}
+		if result.Warnings != "" {
+			msg += fmt.Sprintf("\n\nWarnings:\n%s", result.Warnings)
 		}
 
-		return mcp.NewToolResultText("Main scene started successfully"), nil
+		return mcp.NewToolResultText(msg), nil
 	}
 }
 
@@ -239,12 +243,16 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		timeout := getTimeoutArg(req)
+		msg := fmt.Sprintf("Scene started: %s", scenePath)
 		if timeout > 0 {
 			scheduleAutoStop(client, timeout)
-			return mcp.NewToolResultText(fmt.Sprintf("Scene started: %s (will auto-stop in %.1fs)", scenePath, timeout)), nil
+			msg = fmt.Sprintf("Scene started: %s (will auto-stop in %.1fs)", scenePath, timeout)
+		}
+		if result.Warnings != "" {
+			msg += fmt.Sprintf("\n\nWarnings:\n%s", result.Warnings)
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Scene started: %s", scenePath)), nil
+		return mcp.NewToolResultText(msg), nil
 	}
 }
 
@@ -265,12 +273,16 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		timeout := getTimeoutArg(req)
+		msg := "Current scene started successfully"
 		if timeout > 0 {
 			scheduleAutoStop(client, timeout)
-			return mcp.NewToolResultText(fmt.Sprintf("Current scene started (will auto-stop in %.1fs)", timeout)), nil
+			msg = fmt.Sprintf("Current scene started (will auto-stop in %.1fs)", timeout)
+		}
+		if result.Warnings != "" {
+			msg += fmt.Sprintf("\n\nWarnings:\n%s", result.Warnings)
 		}
 
-		return mcp.NewToolResultText("Current scene started successfully"), nil
+		return mcp.NewToolResultText(msg), nil
 	}
 }
 

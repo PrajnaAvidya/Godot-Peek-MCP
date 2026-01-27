@@ -284,6 +284,7 @@ func _check_pending_run() -> void:
 		frames = _get_tree_text(debugger_stack_frames)
 
 	# check for error in header OR if frames exist (frames only appear on error)
+	# note: debugger errors tree contains warnings too (eg INTEGER_DIVISION) which shouldn't stop the game
 	if "Error" in header or "error" in header:
 		error_detected = true
 		stack_trace = header
@@ -294,21 +295,20 @@ func _check_pending_run() -> void:
 		error_detected = true
 		stack_trace = header + "\n\nStack frames:\n" + frames
 
-	# also check debugger errors tree
-	if not error_detected and debugger_errors_tree:
-		var errors := _get_tree_text(debugger_errors_tree)
-		if not errors.is_empty():
-			error_detected = true
-			stack_trace = errors
-
 	if error_detected:
 		EditorInterface.stop_playing_scene()
+
+	# collect warnings/errors from errors tree (informational, doesn't affect success)
+	var warnings := ""
+	if debugger_errors_tree:
+		warnings = _get_tree_text(debugger_errors_tree)
 
 	var result := {
 		"success": not error_detected,
 		"action": action,
 		"error_detected": error_detected,
-		"stack_trace": stack_trace
+		"stack_trace": stack_trace,
+		"warnings": warnings
 	}
 	if not scene_path.is_empty():
 		result["scene_path"] = scene_path
