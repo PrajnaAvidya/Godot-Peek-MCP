@@ -138,6 +138,14 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetScreenshot(client),
 	)
+
+	// get_monitors - get engine performance monitors
+	s.AddTool(
+		mcp.NewTool("get_monitors",
+			mcp.WithDescription("Get engine performance monitors (FPS, memory, object count, etc.) from the Debugger Monitors tab"),
+		),
+		makeGetMonitors(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -452,5 +460,33 @@ func makeGetScreenshot(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("Screenshot saved: %s (%.0fx%.0f)", result.Path, result.Width, result.Height)), nil
+	}
+}
+
+func makeGetMonitors(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.GetMonitors(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get monitors: %v", err)), nil
+		}
+
+		if result.Count == 0 {
+			return mcp.NewToolResultText("No monitors data"), nil
+		}
+
+		// format as readable grouped text
+		var output string
+		for _, group := range result.Monitors {
+			output += fmt.Sprintf("%s:\n", group.Group)
+			for _, metric := range group.Metrics {
+				output += fmt.Sprintf("  %s: %s\n", metric.Name, metric.Value)
+			}
+		}
+
+		return mcp.NewToolResultText(output), nil
 	}
 }

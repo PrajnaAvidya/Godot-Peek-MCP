@@ -146,3 +146,21 @@ type ScreenshotResult struct {
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
 }
+
+// MonitorMetric represents a single monitor metric (name/value pair)
+type MonitorMetric struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// MonitorGroup represents a group of metrics (e.g., Time, Memory, Object)
+type MonitorGroup struct {
+	Group   string          `json:"group"`
+	Metrics []MonitorMetric `json:"metrics"`
+}
+
+// MonitorsResult from get_monitors
+type MonitorsResult struct {
+	Monitors []MonitorGroup `json:"monitors"`
+	Count    int            `json:"count"`
+}

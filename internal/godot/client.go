@@ -488,3 +488,22 @@ func (c *Client) GetScreenshot(ctx context.Context, target string) (*ScreenshotR
 	}
 	return &result, nil
 }
+
+// GetMonitors fetches engine performance monitors from debugger
+func (c *Client) GetMonitors(ctx context.Context) (*MonitorsResult, error) {
+	resp, err := c.sendRequest(ctx, "get_monitors", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result MonitorsResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}

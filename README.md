@@ -13,7 +13,7 @@ This MCP focuses on **runtime visibility**: output panel, debugger state, screen
 - **Scene Control**: Run main/current/specific scenes, stop the game
 - **Variable Overrides**: Set autoload variables at startup (e.g. enable debug mode)
 - **Output Capture**: Read the Output panel
-- **Debugger Integration**: Errors, stack traces, local variables
+- **Debugger Integration**: Errors, stack traces, local variables, performance monitors
 - **Runtime Inspection**: Node tree and properties from running game
 - **Screenshots**: Editor viewports or running game
 
@@ -66,6 +66,7 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 | `get_debugger_errors` | Get Debugger Errors tab | none |
 | `get_debugger_stack_trace` | Get stack trace when paused | none |
 | `get_debugger_locals` | Get local variables | `frame_index` (optional, 0=top) |
+| `get_monitors` | Get performance monitors (FPS, memory, etc.) | none |
 | `get_remote_scene_tree` | Get node tree from running game | none |
 | `get_remote_node_properties` | Get node properties | `node_path` (e.g. /root/game/Player) |
 
@@ -97,6 +98,8 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 **Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top).
 
 **Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
+
+**Monitors** (`get_monitors`) shows engine performance data: FPS, memory usage, draw calls, physics stats, etc. Useful for profiling.
 
 **Screenshots** save to `/tmp/godot_peek_*.png`. Editor screenshots capture active 2D/3D viewports. Game screenshots require the autoload that the plugin adds automatically.
 

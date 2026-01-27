@@ -23,6 +23,7 @@ var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
 var debugger_stack_frames: Tree = null
 var debugger_inspector: Control = null  # EditorDebuggerInspector
+var monitors_tree: Tree = null
 
 # remote scene tree reference
 var remote_scene_tree: Tree = null
@@ -66,10 +67,18 @@ func _find_debugger_dock() -> void:
 
 	# find the Errors Tree (contains warnings/errors)
 	var trees := _find_all_by_class(base, "Tree")
+
 	for tree: Tree in trees:
 		var path: String = str(tree.get_path())
 		if "EditorDebuggerNode" in path and "Errors" in path:
 			debugger_errors_tree = tree
+			break
+
+	# find the Monitors Tree (performance monitors)
+	for tree: Tree in trees:
+		var path: String = str(tree.get_path())
+		if "EditorDebuggerNode" in path and "Monitors" in path:
+			monitors_tree = tree
 			break
 
 	# find Stack Trace RichTextLabel (error message header)
@@ -104,6 +113,8 @@ func _find_debugger_dock() -> void:
 		push_warning("[GodotPeek] Could not find Debugger Stack Frames tree")
 	if not debugger_inspector:
 		push_warning("[GodotPeek] Could not find EditorDebuggerInspector")
+	if not monitors_tree:
+		push_warning("[GodotPeek] Could not find Monitors tree")
 
 
 
@@ -399,6 +410,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_remote_node_properties(ws, id, params)
 		"get_screenshot":
 			_get_screenshot(ws, id, params)
+		"get_monitors":
+			_get_monitors(ws, id)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -594,6 +607,41 @@ func _get_remote_scene_tree(ws: WebSocketPeer, id: Variant) -> void:
 		"tree": tree_text,
 		"length": tree_text.length()
 	})
+
+
+func _get_monitors(ws: WebSocketPeer, id: Variant) -> void:
+	if not monitors_tree:
+		_send_error(ws, id, -32000, "Monitors tree not found")
+		return
+
+	var monitors := _extract_monitors(monitors_tree)
+	_send_result(ws, id, {
+		"monitors": monitors,
+		"count": monitors.size()
+	})
+
+
+func _extract_monitors(tree: Tree) -> Array:
+	# monitors tree has groups (Time, Memory, etc) with metric children
+	var result: Array = []
+	var root := tree.get_root()
+	if not root:
+		return result
+
+	# iterate through group items (top-level children of root)
+	for group_item in root.get_children():
+		var group_name := group_item.get_text(0)
+		var metrics: Array = []
+
+		# iterate through metric items within the group
+		for metric_item in group_item.get_children():
+			var metric_name := metric_item.get_text(0)
+			var metric_value := metric_item.get_text(1)  # value is in column 1
+			metrics.append({"name": metric_name, "value": metric_value})
+
+		result.append({"group": group_name, "metrics": metrics})
+
+	return result
 
 
 func _get_screenshot(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
