@@ -117,3 +117,16 @@ type NodePropertiesResult struct {
 	Properties []LocalVariable `json:"properties"`
 	Count      int             `json:"count"`
 }
+
+// GetScreenshotParams for get_screenshot method
+type GetScreenshotParams struct {
+	Target string `json:"target"` // "game" or "editor"
+}
+
+// ScreenshotResult from get_screenshot
+type ScreenshotResult struct {
+	Path   string  `json:"path"`
+	Target string  `json:"target"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}

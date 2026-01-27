@@ -114,6 +114,18 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeGetRemoteNodeProperties(client),
 	)
+
+	// get_screenshot - capture game or editor viewport
+	s.AddTool(
+		mcp.NewTool("get_screenshot",
+			mcp.WithDescription("Capture a screenshot from the running game or editor viewports. Returns file path to PNG image."),
+			mcp.WithString("target",
+				mcp.Required(),
+				mcp.Description("What to capture: 'game' (running game viewport, requires screenshot_listener autoload) or 'editor' (combined 2D+3D editor viewports)"),
+			),
+		),
+		makeGetScreenshot(client),
+	)
 }
 
 // scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
@@ -363,5 +375,29 @@ func makeGetRemoteNodeProperties(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(output), nil
+	}
+}
+
+func makeGetScreenshot(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		target, err := req.RequireString("target")
+		if err != nil {
+			return mcp.NewToolResultError("missing required parameter: target"), nil
+		}
+
+		if target != "game" && target != "editor" {
+			return mcp.NewToolResultError("target must be 'game' or 'editor'"), nil
+		}
+
+		result, err := client.GetScreenshot(ctx, target)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get screenshot: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Screenshot saved: %s (%.0fx%.0f)", result.Path, result.Width, result.Height)), nil
 	}
 }

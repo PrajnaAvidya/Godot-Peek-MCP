@@ -435,3 +435,23 @@ func (c *Client) GetRemoteNodeProperties(ctx context.Context, nodePath string) (
 	}
 	return &result, nil
 }
+
+// GetScreenshot captures a screenshot from game or editor viewports
+func (c *Client) GetScreenshot(ctx context.Context, target string) (*ScreenshotResult, error) {
+	params := GetScreenshotParams{Target: target}
+	resp, err := c.sendRequest(ctx, "get_screenshot", params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result ScreenshotResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}

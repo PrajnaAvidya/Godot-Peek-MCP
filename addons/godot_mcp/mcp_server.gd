@@ -2,6 +2,9 @@
 extends Node
 
 const PORT := 6970
+const SCREENSHOT_LISTENER_PORT := 6971
+const EDITOR_SCREENSHOT_PATH := "/tmp/godot_peek_editor_screenshot.png"
+const GAME_SCREENSHOT_PATH := "/tmp/godot_peek_game_screenshot.png"
 
 var tcp_server: TCPServer
 var clients: Array[WebSocketPeer] = []
@@ -325,6 +328,8 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_get_remote_scene_tree(ws, id)
 		"get_remote_node_properties":
 			_get_remote_node_properties(ws, id, params)
+		"get_screenshot":
+			_get_screenshot(ws, id, params)
 		_:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
@@ -479,6 +484,136 @@ func _get_remote_scene_tree(ws: WebSocketPeer, id: Variant) -> void:
 		"tree": tree_text,
 		"length": tree_text.length()
 	})
+
+
+func _get_screenshot(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	var target: String = params.get("target", "")
+	if target.is_empty():
+		_send_error(ws, id, -32602, "Missing required parameter: target")
+		return
+
+	if target == "editor":
+		_get_editor_screenshot(ws, id)
+	elif target == "game":
+		_get_game_screenshot(ws, id)
+	else:
+		_send_error(ws, id, -32602, "Invalid target '%s': must be 'editor' or 'game'" % target)
+
+
+func _get_editor_screenshot(ws: WebSocketPeer, id: Variant) -> void:
+	# capture 2D and 3D viewports
+	var vp_2d := EditorInterface.get_editor_viewport_2d()
+	var vp_3d := EditorInterface.get_editor_viewport_3d()
+
+	if not vp_2d and not vp_3d:
+		_send_error(ws, id, -32000, "Could not find editor viewports")
+		return
+
+	var img_2d: Image = null
+	var img_3d: Image = null
+
+	# only capture viewports that have meaningful size (> 10px)
+	const MIN_SIZE := 10
+	if vp_2d and vp_2d.size.x > MIN_SIZE and vp_2d.size.y > MIN_SIZE:
+		var tex := vp_2d.get_texture()
+		if tex:
+			img_2d = tex.get_image()
+
+	if vp_3d and vp_3d.size.x > MIN_SIZE and vp_3d.size.y > MIN_SIZE:
+		var tex := vp_3d.get_texture()
+		if tex:
+			img_3d = tex.get_image()
+
+	# use whichever viewport(s) are available
+	var combined: Image
+	var width := 0
+	var height := 0
+
+	if img_2d and img_3d:
+		# convert both to same format before combining
+		img_2d.convert(Image.FORMAT_RGBA8)
+		img_3d.convert(Image.FORMAT_RGBA8)
+		width = img_2d.get_width() + img_3d.get_width()
+		height = max(img_2d.get_height(), img_3d.get_height())
+		combined = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		combined.blit_rect(img_2d, Rect2i(Vector2i.ZERO, img_2d.get_size()), Vector2i.ZERO)
+		combined.blit_rect(img_3d, Rect2i(Vector2i.ZERO, img_3d.get_size()), Vector2i(img_2d.get_width(), 0))
+	elif img_2d:
+		combined = img_2d
+		width = img_2d.get_width()
+		height = img_2d.get_height()
+	elif img_3d:
+		combined = img_3d
+		width = img_3d.get_width()
+		height = img_3d.get_height()
+	else:
+		_send_error(ws, id, -32000, "Failed to capture editor viewports (both too small or empty)")
+		return
+
+	var err := combined.save_png(EDITOR_SCREENSHOT_PATH)
+	if err != OK:
+		_send_error(ws, id, -32000, "Failed to save screenshot: %s" % error_string(err))
+		return
+
+	_send_result(ws, id, {
+		"path": EDITOR_SCREENSHOT_PATH,
+		"target": "editor",
+		"width": width,
+		"height": height
+	})
+
+
+func _get_game_screenshot(ws: WebSocketPeer, id: Variant) -> void:
+	# check if game is running
+	if not EditorInterface.is_playing_scene():
+		_send_error(ws, id, -32000, "Game is not running")
+		return
+
+	# send UDP request to screenshot listener in game
+	var udp := PacketPeerUDP.new()
+	var err := udp.set_dest_address("127.0.0.1", SCREENSHOT_LISTENER_PORT)
+	if err != OK:
+		_send_error(ws, id, -32000, "Failed to set UDP destination: %s" % error_string(err))
+		return
+
+	var request := {"cmd": "screenshot"}
+	err = udp.put_packet(JSON.stringify(request).to_utf8_buffer())
+	if err != OK:
+		_send_error(ws, id, -32000, "Failed to send UDP request: %s" % error_string(err))
+		return
+
+	# wait for response with timeout
+	var timeout := 2.0
+	var elapsed := 0.0
+	var poll_interval := 0.05
+
+	while elapsed < timeout:
+		await get_tree().create_timer(poll_interval).timeout
+		elapsed += poll_interval
+
+		if udp.get_available_packet_count() > 0:
+			var packet := udp.get_packet()
+			var response_str := packet.get_string_from_utf8()
+
+			var json := JSON.new()
+			if json.parse(response_str) != OK:
+				_send_error(ws, id, -32000, "Invalid response from screenshot listener")
+				return
+
+			var response: Dictionary = json.data
+			if response.has("error"):
+				_send_error(ws, id, -32000, "Screenshot listener error: %s" % response.error)
+				return
+
+			_send_result(ws, id, {
+				"path": response.get("path", GAME_SCREENSHOT_PATH),
+				"target": "game",
+				"width": response.get("width", 0),
+				"height": response.get("height", 0)
+			})
+			return
+
+	_send_error(ws, id, -32000, "Timeout waiting for screenshot. Is screenshot_listener.gd added as autoload in your project?")
 
 
 func _get_tree_item_at_index(root: TreeItem, index: int) -> TreeItem:

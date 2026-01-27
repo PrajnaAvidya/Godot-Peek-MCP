@@ -8,6 +8,7 @@ MCP (Model Context Protocol) server for peeking into Godot 4.5+ editor runtime. 
 - **Output Capture**: Read the Output panel (print statements, errors, warnings)
 - **Debugger Integration**: Get errors, stack traces, and local variables when paused
 - **Runtime Inspection**: Get the instantiated node tree from the running game
+- **Screenshots**: Capture editor viewports or running game (requires vision capability)
 
 ## Quick Start
 
@@ -62,6 +63,12 @@ Restart Claude Code or run `/mcp` to reload.
 | `get_remote_scene_tree` | Get instantiated node tree from running game | none |
 | `get_remote_node_properties` | Get properties of a specific node from running game | `node_path` (required) - path like /root/game/Player |
 
+### Screenshots
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_screenshot` | Capture screenshot of editor or game | `target` (required) - "editor" or "game" |
+
 ## Architecture
 
 ```
@@ -99,6 +106,30 @@ Returns the instantiated node tree from the running game. Shows "root" at top wi
 
 ### Remote Node Properties (`get_remote_node_properties`)
 Returns all properties of a specific node in the running game. Use `node_path` to specify which node (e.g., `/root/game/Player`). Returns property names, values, and types. Only available while game is running.
+
+### Screenshots (`get_screenshot`)
+
+Captures screenshots that Claude Code can view (requires vision capability).
+
+**Editor screenshots** (`target="editor"`):
+- Captures 2D and/or 3D editor viewports (whichever are active)
+- Works immediately, no extra setup required
+- Saved to `/tmp/godot_peek_editor_screenshot.png`
+
+**Game screenshots** (`target="game"`):
+- Captures the running game's viewport
+- Requires adding an autoload to your project (see below)
+- Saved to `/tmp/godot_peek_game_screenshot.png`
+
+#### Game Screenshot Setup
+
+To enable game screenshots, add the screenshot listener as an autoload:
+
+1. In Godot: Project → Project Settings → Autoload
+2. Add `addons/godot_mcp/screenshot_listener.gd` with name "ScreenshotListener"
+3. Run your game - screenshots will now work
+
+The listener runs a UDP server (port 6971) that responds to screenshot requests from the editor plugin.
 
 ## Configuration
 
