@@ -11,6 +11,7 @@ This MCP focuses on **runtime visibility**: output panel, debugger state, screen
 ## Features
 
 - **Scene Control**: Run main/current/specific scenes, stop the game
+- **Variable Overrides**: Set autoload variables at startup (e.g. enable debug mode)
 - **Output Capture**: Read the Output panel
 - **Debugger Integration**: Errors, stack traces, local variables
 - **Runtime Inspection**: Node tree and properties from running game
@@ -49,16 +50,19 @@ Restart Claude Code or run `/mcp` to reload.
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `run_main_scene` | Run main scene (F5) | `timeout_seconds` (optional) |
-| `run_scene` | Run a specific scene | `scene_path`, `timeout_seconds` (optional) |
-| `run_current_scene` | Run currently open scene | `timeout_seconds` (optional) |
+| `run_main_scene` | Run main scene (F5) | `timeout_seconds`, `overrides` (optional) |
+| `run_scene` | Run a specific scene | `scene_path`, `timeout_seconds`, `overrides` (optional) |
+| `run_current_scene` | Run currently open scene | `timeout_seconds`, `overrides` (optional) |
 | `stop_scene` | Stop the running game | none |
+
+**overrides**: Set autoload variables at startup. Format: `{"AutoloadName": {"property": value}}`
+Example: `{"DebugManager": {"debug_mode": true}}`
 
 ### Output & Debugging
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_output` | Get Output panel content | `clear` (optional) |
+| `get_output` | Get Output panel content | `clear`, `new_only` (optional) |
 | `get_debugger_errors` | Get Debugger Errors tab | none |
 | `get_debugger_stack_trace` | Get stack trace when paused | none |
 | `get_debugger_locals` | Get local variables | `frame_index` (optional, 0=top) |
@@ -90,7 +94,7 @@ Restart Claude Code or run `/mcp` to reload.
 
 **Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.
 
-**Debugger tools** (`get_debugger_errors`, `get_debugger_stack_trace`, `get_debugger_locals`) pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top).
+**Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top).
 
 **Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
 
@@ -103,6 +107,18 @@ Restart Claude Code or run `/mcp` to reload.
 | `GODOT_MCP_URL` | `ws://localhost:6970` | WebSocket URL |
 
 Plugin port is in `addons/godot_mcp/mcp_server.gd`.
+
+## Tips for LLM Users
+
+**Iterative debugging**: Run scene → check output → fix code → repeat. The `run_*` tools auto-detect startup crashes and return the stack trace.
+
+**Test with overrides**: Run with `{"DebugManager": {"debug_mode": true}}` to enable debug features without editing code.
+
+**Inspect at runtime**: Use `get_remote_scene_tree` to see what's instantiated, then `get_remote_node_properties` to check values.
+
+**Auto-stop for testing**: Use `timeout_seconds` to run briefly, then check `get_output`. Good for automated test loops.
+
+**Screenshots for visual bugs**: `get_screenshot target=game` shows exactly what the player sees.
 
 ## Requirements
 

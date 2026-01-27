@@ -45,9 +45,23 @@ type OutputNotification struct {
 	Timestamp float64 `json:"timestamp"`
 }
 
+// Overrides is a map of autoload names to property overrides
+type Overrides map[string]map[string]interface{}
+
+// RunMainSceneParams for run_main_scene method
+type RunMainSceneParams struct {
+	Overrides Overrides `json:"overrides,omitempty"`
+}
+
 // RunSceneParams for run_scene method
 type RunSceneParams struct {
-	ScenePath string `json:"scene_path"`
+	ScenePath string    `json:"scene_path"`
+	Overrides Overrides `json:"overrides,omitempty"`
+}
+
+// RunCurrentSceneParams for run_current_scene method
+type RunCurrentSceneParams struct {
+	Overrides Overrides `json:"overrides,omitempty"`
 }
 
 // GetOutputParams for get_output method

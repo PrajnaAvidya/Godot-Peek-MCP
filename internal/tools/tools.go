@@ -19,6 +19,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 			mcp.WithNumber("timeout_seconds",
 				mcp.Description("Auto-stop the scene after this many seconds"),
 			),
+			mcp.WithObject("overrides",
+				mcp.Description("Override autoload variables on startup. Map of autoload names to property overrides, e.g. {\"DebugManager\": {\"debug_mode\": true}}"),
+			),
 		),
 		makeRunMainScene(client),
 	)
@@ -34,6 +37,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 			mcp.WithNumber("timeout_seconds",
 				mcp.Description("Auto-stop the scene after this many seconds"),
 			),
+			mcp.WithObject("overrides",
+				mcp.Description("Override autoload variables on startup. Map of autoload names to property overrides, e.g. {\"DebugManager\": {\"debug_mode\": true}}"),
+			),
 		),
 		makeRunScene(client),
 	)
@@ -44,6 +50,9 @@ func Register(s *server.MCPServer, client *godot.Client) {
 			mcp.WithDescription("Run the currently open scene in the editor"),
 			mcp.WithNumber("timeout_seconds",
 				mcp.Description("Auto-stop the scene after this many seconds"),
+			),
+			mcp.WithObject("overrides",
+				mcp.Description("Override autoload variables on startup. Map of autoload names to property overrides, e.g. {\"DebugManager\": {\"debug_mode\": true}}"),
 			),
 		),
 		makeRunCurrentScene(client),
@@ -61,8 +70,11 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	s.AddTool(
 		mcp.NewTool("get_output",
 			mcp.WithDescription("Get output from the Godot Output panel (print statements, errors, warnings)"),
+			mcp.WithBoolean("new_only",
+				mcp.Description("If true, return only output since last call with clear=true"),
+			),
 			mcp.WithBoolean("clear",
-				mcp.Description("If true, mark current position as read for new_only"),
+				mcp.Description("If true, mark current position for future new_only calls"),
 			),
 		),
 		makeGetOutput(client),
@@ -148,13 +160,37 @@ func getTimeoutArg(req mcp.CallToolRequest) float64 {
 	return 0
 }
 
+// getOverridesArg extracts the optional overrides arg from request
+func getOverridesArg(req mcp.CallToolRequest) godot.Overrides {
+	args := req.GetArguments()
+	if args == nil {
+		return nil
+	}
+	raw, ok := args["overrides"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	// convert to Overrides type
+	result := make(godot.Overrides)
+	for autoloadName, props := range raw {
+		if propsMap, ok := props.(map[string]interface{}); ok {
+			result[autoloadName] = propsMap
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if !client.IsConnected() {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		result, err := client.RunMainScene(ctx)
+		overrides := getOverridesArg(req)
+		result, err := client.RunMainScene(ctx, overrides)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run main scene: %v", err)), nil
 		}
@@ -184,7 +220,8 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("missing required parameter: scene_path"), nil
 		}
 
-		result, err := client.RunScene(ctx, scenePath)
+		overrides := getOverridesArg(req)
+		result, err := client.RunScene(ctx, scenePath, overrides)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run scene: %v", err)), nil
 		}
@@ -209,7 +246,8 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		result, err := client.RunCurrentScene(ctx)
+		overrides := getOverridesArg(req)
+		result, err := client.RunCurrentScene(ctx, overrides)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run current scene: %v", err)), nil
 		}

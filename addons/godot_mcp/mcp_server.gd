@@ -5,6 +5,7 @@ const PORT := 6970
 const SCREENSHOT_LISTENER_PORT := 6971
 const EDITOR_SCREENSHOT_PATH := "/tmp/godot_peek_editor_screenshot.png"
 const GAME_SCREENSHOT_PATH := "/tmp/godot_peek_game_screenshot.png"
+const OVERRIDES_PATH := "/tmp/godot_peek_overrides.json"
 
 var tcp_server: TCPServer
 var clients: Array[WebSocketPeer] = []
@@ -377,11 +378,11 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 		"ping":
 			_send_result(ws, id, {"pong": true})
 		"run_main_scene":
-			_run_main_scene(ws, id)
+			_run_main_scene(ws, id, params)
 		"run_scene":
 			_run_scene(ws, id, params)
 		"run_current_scene":
-			_run_current_scene(ws, id)
+			_run_current_scene(ws, id, params)
 		"stop_scene":
 			_stop_scene(ws, id)
 		"get_output":
@@ -402,10 +403,11 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 			_send_error(ws, id, -32601, "Method not found: %s" % method)
 
 
-func _run_main_scene(ws: WebSocketPeer, id: Variant) -> void:
+func _run_main_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_main_scene()
 
 	# queue error check (needs time for game to start and error to appear)
@@ -427,6 +429,7 @@ func _run_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_custom_scene(scene_path)
 
 	# queue error check for 1500ms from now
@@ -439,10 +442,11 @@ func _run_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	}
 
 
-func _run_current_scene(ws: WebSocketPeer, id: Variant) -> void:
+func _run_current_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_current_scene()
 
 	# queue error check for 1500ms from now
@@ -453,6 +457,24 @@ func _run_current_scene(ws: WebSocketPeer, id: Variant) -> void:
 		"scene_path": "",
 		"check_time": Time.get_ticks_msec() + 1500
 	}
+
+
+# write overrides file for runtime helper to read
+func _write_overrides(overrides: Variant) -> void:
+	if overrides == null or (overrides is Dictionary and overrides.is_empty()):
+		# delete file if no overrides
+		if FileAccess.file_exists(OVERRIDES_PATH):
+			DirAccess.remove_absolute(OVERRIDES_PATH)
+		return
+
+	var file := FileAccess.open(OVERRIDES_PATH, FileAccess.WRITE)
+	if not file:
+		push_error("[GodotPeek] Failed to write overrides file: %s" % error_string(FileAccess.get_open_error()))
+		return
+
+	file.store_string(JSON.stringify(overrides))
+	file.close()
+	print("[GodotPeek] Wrote overrides to %s" % OVERRIDES_PATH)
 
 
 func _stop_scene(ws: WebSocketPeer, id: Variant) -> void:
