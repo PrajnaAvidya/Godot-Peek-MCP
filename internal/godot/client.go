@@ -273,39 +273,60 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 }
 
 // RunMainScene starts the project's main scene
-func (c *Client) RunMainScene(ctx context.Context) error {
+func (c *Client) RunMainScene(ctx context.Context) (*GenericResult, error) {
 	resp, err := c.sendRequest(ctx, "run_main_scene", nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("godot error: %s", resp.Error.Message)
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
 	}
-	return nil
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
 }
 
 // RunScene starts a specific scene
-func (c *Client) RunScene(ctx context.Context, scenePath string) error {
+func (c *Client) RunScene(ctx context.Context, scenePath string) (*GenericResult, error) {
 	resp, err := c.sendRequest(ctx, "run_scene", RunSceneParams{ScenePath: scenePath})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("godot error: %s", resp.Error.Message)
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
 	}
-	return nil
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
 }
 
 // RunCurrentScene starts the currently open scene
-func (c *Client) RunCurrentScene(ctx context.Context) error {
+func (c *Client) RunCurrentScene(ctx context.Context) (*GenericResult, error) {
 	resp, err := c.sendRequest(ctx, "run_current_scene", nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("godot error: %s", resp.Error.Message)
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
 	}
-	return nil
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
 }
 
 // StopScene stops the running game

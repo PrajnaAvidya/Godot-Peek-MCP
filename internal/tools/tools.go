@@ -154,8 +154,13 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		if err := client.RunMainScene(ctx); err != nil {
+		result, err := client.RunMainScene(ctx)
+		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run main scene: %v", err)), nil
+		}
+
+		if result.ErrorDetected {
+			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
 		timeout := getTimeoutArg(req)
@@ -179,8 +184,13 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("missing required parameter: scene_path"), nil
 		}
 
-		if err := client.RunScene(ctx, scenePath); err != nil {
+		result, err := client.RunScene(ctx, scenePath)
+		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run scene: %v", err)), nil
+		}
+
+		if result.ErrorDetected {
+			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
 		timeout := getTimeoutArg(req)
@@ -199,8 +209,13 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		if err := client.RunCurrentScene(ctx); err != nil {
+		result, err := client.RunCurrentScene(ctx)
+		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run current scene: %v", err)), nil
+		}
+
+		if result.ErrorDetected {
+			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
 		timeout := getTimeoutArg(req)

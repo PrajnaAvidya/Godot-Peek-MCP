@@ -14,6 +14,9 @@ var pending_connections: Array[StreamPeerTCP] = []
 var output_rich_text: RichTextLabel = null
 var last_output_length: int = 0
 
+# pending run requests waiting for error check
+var _pending_run: Dictionary = {}  # {ws, id, action, scene_path, check_time}
+
 # debugger dock references
 var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
@@ -234,6 +237,71 @@ func _process(_delta: float) -> void:
 	_accept_new_connections()
 	_process_pending_connections()
 	_process_clients()
+	_check_pending_run()
+
+
+# check if a pending run request is ready for error checking
+func _check_pending_run() -> void:
+	if _pending_run.is_empty():
+		return
+
+	var now := Time.get_ticks_msec()
+	if now < _pending_run.check_time:
+		return
+
+	# time to check for errors
+	var ws: WebSocketPeer = _pending_run.ws
+	var id: Variant = _pending_run.id
+	var action: String = _pending_run.action
+	var scene_path: String = _pending_run.scene_path
+	_pending_run = {}
+
+	var error_detected := false
+	var stack_trace := ""
+
+	# re-find debugger controls fresh (they may change between sessions)
+	_find_debugger_dock()
+
+	var header := ""
+	var frames := ""
+
+	if debugger_stack_trace:
+		header = debugger_stack_trace.get_parsed_text()
+
+	if debugger_stack_frames:
+		frames = _get_tree_text(debugger_stack_frames)
+
+	# check for error in header OR if frames exist (frames only appear on error)
+	if "Error" in header or "error" in header:
+		error_detected = true
+		stack_trace = header
+		if not frames.is_empty():
+			stack_trace += "\n\nStack frames:\n" + frames
+	elif not frames.is_empty():
+		# frames exist but header doesn't say error - still an error condition
+		error_detected = true
+		stack_trace = header + "\n\nStack frames:\n" + frames
+
+	# also check debugger errors tree
+	if not error_detected and debugger_errors_tree:
+		var errors := _get_tree_text(debugger_errors_tree)
+		if not errors.is_empty():
+			error_detected = true
+			stack_trace = errors
+
+	if error_detected:
+		EditorInterface.stop_playing_scene()
+
+	var result := {
+		"success": not error_detected,
+		"action": action,
+		"error_detected": error_detected,
+		"stack_trace": stack_trace
+	}
+	if not scene_path.is_empty():
+		result["scene_path"] = scene_path
+
+	_send_result(ws, id, result)
 
 
 func _accept_new_connections() -> void:
@@ -337,11 +405,17 @@ func _handle_message(ws: WebSocketPeer, message: String) -> void:
 func _run_main_scene(ws: WebSocketPeer, id: Variant) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
-		# small delay helps avoid issues
-		await get_tree().create_timer(0.1).timeout
 
 	EditorInterface.play_main_scene()
-	_send_result(ws, id, {"success": true, "action": "run_main_scene"})
+
+	# queue error check (needs time for game to start and error to appear)
+	_pending_run = {
+		"ws": ws,
+		"id": id,
+		"action": "run_main_scene",
+		"scene_path": "",
+		"check_time": Time.get_ticks_msec() + 1500
+	}
 
 
 func _run_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
@@ -352,19 +426,33 @@ func _run_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
-		await get_tree().create_timer(0.1).timeout
 
 	EditorInterface.play_custom_scene(scene_path)
-	_send_result(ws, id, {"success": true, "action": "run_scene", "scene_path": scene_path})
+
+	# queue error check for 1500ms from now
+	_pending_run = {
+		"ws": ws,
+		"id": id,
+		"action": "run_scene",
+		"scene_path": scene_path,
+		"check_time": Time.get_ticks_msec() + 1500
+	}
 
 
 func _run_current_scene(ws: WebSocketPeer, id: Variant) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
-		await get_tree().create_timer(0.1).timeout
 
 	EditorInterface.play_current_scene()
-	_send_result(ws, id, {"success": true, "action": "run_current_scene"})
+
+	# queue error check for 1500ms from now
+	_pending_run = {
+		"ws": ws,
+		"id": id,
+		"action": "run_current_scene",
+		"scene_path": "",
+		"check_time": Time.get_ticks_msec() + 1500
+	}
 
 
 func _stop_scene(ws: WebSocketPeer, id: Variant) -> void:

@@ -95,9 +95,11 @@ type LocalsResult struct {
 
 // GenericResult for simple success responses
 type GenericResult struct {
-	Success   bool   `json:"success"`
-	Action    string `json:"action,omitempty"`
-	ScenePath string `json:"scene_path,omitempty"`
+	Success       bool   `json:"success"`
+	Action        string `json:"action,omitempty"`
+	ScenePath     string `json:"scene_path,omitempty"`
+	ErrorDetected bool   `json:"error_detected,omitempty"`
+	StackTrace    string `json:"stack_trace,omitempty"`
 }
 
 // SceneTreeResult from get_remote_scene_tree
