@@ -1,6 +1,6 @@
 # Godot Peek MCP
 
-MCP server for peeking into Godot 4.5+ editor runtime. Run scenes, capture output, inspect debugger state.
+MCP server for peeking into Godot editor runtime. Run scenes, capture output, inspect debugger state.
 
 ## Why Another Godot MCP?
 
@@ -33,7 +33,7 @@ Copy or symlink `addons/godot_mcp` to your Godot project's addons folder, then e
 
 You should see something like this in Output:
 ```
-[GodotPeek] Godot 4.6 detected, using 4.6+ UI paths
+[GodotPeek] Godot 4.5 detected
 [GodotPeek] WebSocket server listening on ws://localhost:6970
 ```
 
@@ -126,6 +126,6 @@ Plugin port is in `addons/godot_mcp/mcp_server.gd`.
 
 ## Requirements
 
-- Godot 4.5 or 4.6 (auto-detects version for correct UI paths)
+- Godot 4.4, 4.5, or 4.6 (explicit version support, unsupported versions are rejected)
 - Any MCP client
 - Go 1.21+ (only if building from source)

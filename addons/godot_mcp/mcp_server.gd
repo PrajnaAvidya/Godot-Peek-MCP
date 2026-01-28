@@ -18,8 +18,9 @@ var pending_connections: Array[StreamPeerTCP] = []
 var output_rich_text: RichTextLabel = null
 var last_output_length: int = 0
 
-# godot version detection (4.6+ changed node names in editor UI)
-var _is_godot_46_plus := false
+# godot version - explicitly supported: 4.4, 4.5, 4.6
+# version string like "4.4", "4.5", "4.6" (no patch version)
+var _godot_version := ""
 
 # pending run requests waiting for error check
 var _pending_run: Dictionary = {}  # {ws, id, action, scene_path, check_time}
@@ -27,6 +28,7 @@ var _pending_run: Dictionary = {}  # {ws, id, action, scene_path, check_time}
 # debugger dock references
 var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
+var debugger_stack_trace_label: Label = null  # 4.4 only (4.5/4.6 use RichTextLabel above)
 var debugger_stack_frames: Tree = null
 var debugger_inspector: Control = null  # EditorDebuggerInspector
 var monitors_tree: Tree = null
@@ -40,13 +42,19 @@ var main_inspector: Control = null
 
 
 func _ready() -> void:
-	# detect godot version for UI path differences
+	# detect and validate godot version
 	var version := Engine.get_version_info()
-	_is_godot_46_plus = version.major > 4 or (version.major == 4 and version.minor >= 6)
-	print("[GodotPeek] Godot %d.%d detected, using %s UI paths" % [
-		version.major, version.minor,
-		"4.6+" if _is_godot_46_plus else "4.5"
-	])
+	var major: int = version.major
+	var minor: int = version.minor
+
+	# only support specific 4.x versions
+	if major == 4 and minor in [4, 5, 6]:
+		_godot_version = "%d.%d" % [major, minor]
+	else:
+		push_error("[GodotPeek] Unsupported Godot version %d.%d. Supported versions: 4.4, 4.5, 4.6" % [major, minor])
+		return
+
+	print("[GodotPeek] Godot %s detected" % _godot_version)
 	if DEBUG_VERBOSE:
 		print("[GodotPeek] DEBUG_VERBOSE is ON - verbose logging enabled")
 
@@ -75,18 +83,19 @@ func _find_output_dock() -> void:
 	_debug("found %d RichTextLabel nodes" % rich_texts.size())
 
 	# look for the EditorLog's RichTextLabel
-	# 4.5: node named "EditorLog" contains it
-	# 4.6: node renamed to "Output" under EditorBottomPanel
-	var pattern_desc := "EditorBottomPanel + /Output/" if _is_godot_46_plus else "EditorLog"
-	_debug("using pattern: %s" % pattern_desc)
+	# path patterns differ by version
+	_debug("using pattern for version %s" % _godot_version)
 
 	for rt: RichTextLabel in rich_texts:
 		var path: String = str(rt.get_path())
 		var found := false
-		if _is_godot_46_plus:
-			found = "EditorBottomPanel" in path and "/Output/" in path
-		else:
-			found = "EditorLog" in path
+		match _godot_version:
+			"4.6":
+				# 4.6: node renamed to "Output" under EditorBottomPanel
+				found = "EditorBottomPanel" in path and "/Output/" in path
+			"4.4", "4.5":
+				# 4.4/4.5: node named "EditorLog" contains it
+				found = "EditorLog" in path
 		_debug("  checking: %s -> %s" % [path, "MATCH" if found else "no match"])
 		if found:
 			output_rich_text = rt
@@ -102,14 +111,19 @@ func _find_debugger_dock() -> void:
 	_debug("=== _find_debugger_dock ===")
 	var base := EditorInterface.get_base_control()
 
-	# debugger node path differs by version:
-	# 4.5: "EditorDebuggerNode" in path
-	# 4.6: "/Debugger/" in path (node renamed)
-	var debugger_pattern := "/Debugger/" if _is_godot_46_plus else "EditorDebuggerNode"
-	_debug("debugger_pattern: %s" % debugger_pattern)
+	# debugger node path differs by version
+	var debugger_pattern := ""
+	match _godot_version:
+		"4.6":
+			# 4.6: node renamed to "/Debugger/"
+			debugger_pattern = "/Debugger/"
+		"4.4", "4.5":
+			# 4.4/4.5: "EditorDebuggerNode" in path
+			debugger_pattern = "EditorDebuggerNode"
+	_debug("debugger_pattern for %s: %s" % [_godot_version, debugger_pattern])
 
 	# find the Errors Tree (contains warnings/errors)
-	# note: in 4.6 tab name may include count like "Errors (1)"
+	# note: in 4.6 tab name may include count like "Errors (1)" but path still matches
 	var trees := _find_all_by_class(base, "Tree")
 	_debug("found %d Tree nodes" % trees.size())
 
@@ -138,7 +152,8 @@ func _find_debugger_dock() -> void:
 			_debug("  -> SELECTED as monitors_tree")
 			break
 
-	# find Stack Trace RichTextLabel (error message header)
+	# find Stack Trace error message header
+	# 4.5/4.6: RichTextLabel, 4.4: Label
 	var rich_texts := _find_all_by_class(base, "RichTextLabel")
 	_debug("--- searching for Stack Trace RichTextLabel (found %d total) ---" % rich_texts.size())
 	for rt: RichTextLabel in rich_texts:
@@ -151,6 +166,23 @@ func _find_debugger_dock() -> void:
 			debugger_stack_trace = rt
 			_debug("  -> SELECTED as debugger_stack_trace")
 			break
+
+	# 4.4: Stack Trace uses Label instead of RichTextLabel
+	if not debugger_stack_trace and _godot_version == "4.4":
+		_debug("--- searching for Stack Trace Label (4.4) ---")
+		var labels := _find_all_by_class(base, "Label")
+		for lbl: Label in labels:
+			var path: String = str(lbl.get_path())
+			var matches_debugger := debugger_pattern in path
+			var matches_stack := "/Stack Trace/" in path
+			# prefer the one directly under Stack Trace/@HBoxContainer (error header)
+			var is_header := "/Stack Trace/@HBoxContainer" in path
+			if matches_debugger or matches_stack:
+				_debug("  %s -> debugger:%s stack:%s header:%s" % [path, matches_debugger, matches_stack, is_header])
+			if matches_debugger and matches_stack and is_header:
+				debugger_stack_trace_label = lbl
+				_debug("  -> SELECTED as debugger_stack_trace_label")
+				break
 
 	# find Stack Trace Tree (actual stack frames)
 	# look for Tree inside Stack Trace/HSplitContainer/.../VBoxContainer
@@ -181,13 +213,14 @@ func _find_debugger_dock() -> void:
 	_debug("  debugger_errors_tree: %s" % ("FOUND" if debugger_errors_tree else "NOT FOUND"))
 	_debug("  monitors_tree: %s" % ("FOUND" if monitors_tree else "NOT FOUND"))
 	_debug("  debugger_stack_trace: %s" % ("FOUND" if debugger_stack_trace else "NOT FOUND"))
+	_debug("  debugger_stack_trace_label: %s" % ("FOUND" if debugger_stack_trace_label else "NOT FOUND"))
 	_debug("  debugger_stack_frames: %s" % ("FOUND" if debugger_stack_frames else "NOT FOUND"))
 	_debug("  debugger_inspector: %s" % ("FOUND" if debugger_inspector else "NOT FOUND"))
 
 	# warn if critical controls not found
 	if not debugger_errors_tree:
 		push_warning("[GodotPeek] Could not find Debugger Errors tree")
-	if not debugger_stack_trace:
+	if not debugger_stack_trace and not debugger_stack_trace_label:
 		push_warning("[GodotPeek] Could not find Debugger Stack Trace message")
 	if not debugger_stack_frames:
 		push_warning("[GodotPeek] Could not find Debugger Stack Frames tree")
@@ -205,16 +238,18 @@ func _find_remote_scene_tree() -> void:
 	var all_nodes := _find_all_nodes(base)
 	_debug("searching %d total nodes" % all_nodes.size())
 
-	# click "Remote" button to populate the tree (required in both 4.5 and 4.6)
+	# click "Remote" button to populate the tree (required in 4.4/4.5/4.6)
 	_debug("searching for Remote button")
 	var found_remote_btn := false
+	var all_scene_buttons: Array[String] = []
 	for node in all_nodes:
 		var path := str(node.get_path())
 		if "/Scene/" in path and node is Button:
 			var btn := node as Button
-			_debug("  button in /Scene/: text='%s' pressed=%s path=%s" % [btn.text, btn.button_pressed, path])
+			all_scene_buttons.append("'%s' at %s" % [btn.text, path])
 			if btn.text == "Remote":
 				found_remote_btn = true
+				_debug("  FOUND Remote button: pressed=%s path=%s" % [btn.button_pressed, path])
 				if not btn.button_pressed:
 					_debug("  -> clicking Remote button")
 					btn.button_pressed = true
@@ -224,6 +259,7 @@ func _find_remote_scene_tree() -> void:
 				break
 	if not found_remote_btn:
 		_debug("  Remote button NOT FOUND")
+		_debug("  all buttons in /Scene/: %s" % str(all_scene_buttons))
 
 	# EditorDebuggerTree IS the remote scene tree (inherits from Tree)
 	_debug("--- searching for EditorDebuggerTree ---")
@@ -247,9 +283,8 @@ func _find_main_inspector() -> void:
 	var all_nodes := _find_all_nodes(base)
 	_debug("searching %d total nodes for EditorInspector" % all_nodes.size())
 
-	# 4.5: path contains "DockSlotRightUL/Inspector/@EditorInspector"
-	# 4.6: path has extra containers between Inspector and EditorInspector
-	# use looser match: look for EditorInspector under the Inspector dock
+	# inspector path differs slightly by version but all have DockSlotRightUL/Inspector/
+	# use looser match that works across 4.4/4.5/4.6
 	for node in all_nodes:
 		var path := str(node.get_path())
 		if node.get_class() == "EditorInspector":
@@ -356,17 +391,29 @@ func _get_remote_node_properties(ws: WebSocketPeer, id: Variant, params: Diction
 		_send_error(ws, id, -32000, "No object ID for node: %s" % node_path)
 		return
 
-	# trigger remote object inspection via objects_selected signal
-	_debug("emitting objects_selected signal with id %s" % str(object_id))
+	# trigger remote object inspection
+	_debug("triggering inspection for object_id %s" % str(object_id))
+	_debug("remote_scene_tree class: %s" % remote_scene_tree.get_class())
+
 	remote_scene_tree.set_selected(target, 0)
-	var ids := PackedInt64Array([object_id])
-	remote_scene_tree.objects_selected.emit(ids, 0)
+
+	# trigger inspection via version-specific signal
+	match _godot_version:
+		"4.5", "4.6":
+			_debug("using objects_selected signal (%s)" % _godot_version)
+			var ids := PackedInt64Array([object_id])
+			remote_scene_tree.objects_selected.emit(ids, 0)
+		"4.4":
+			_debug("using object_selected signal (4.4)")
+			remote_scene_tree.object_selected.emit(object_id, 0)
 
 	# wait for inspector to populate
 	_debug("waiting 0.3s for inspector to populate...")
 	await get_tree().create_timer(0.3).timeout
 
 	# extract properties from main inspector
+	_debug("main_inspector class: %s" % main_inspector.get_class())
+	_debug("main_inspector visible: %s" % main_inspector.visible)
 	var props := _extract_inspector_properties(main_inspector)
 	_debug("extracted %d properties" % props.size())
 	_send_result(ws, id, {
@@ -429,9 +476,12 @@ func _check_pending_run() -> void:
 
 	if debugger_stack_trace:
 		header = debugger_stack_trace.get_parsed_text()
-		_debug("stack_trace header (%d chars): %s" % [header.length(), header.substr(0, 200)])
+		_debug("stack_trace header from RichTextLabel (%d chars): %s" % [header.length(), header.substr(0, 200)])
+	elif debugger_stack_trace_label:
+		header = debugger_stack_trace_label.text
+		_debug("stack_trace header from Label (%d chars): %s" % [header.length(), header.substr(0, 200)])
 	else:
-		_debug("debugger_stack_trace is null, no header")
+		_debug("no stack_trace control found, no header")
 
 	if debugger_stack_frames:
 		frames = _get_tree_text(debugger_stack_frames)
@@ -703,14 +753,16 @@ func _get_debugger_errors(ws: WebSocketPeer, id: Variant) -> void:
 
 
 func _get_debugger_stack_trace(ws: WebSocketPeer, id: Variant) -> void:
-	if not debugger_stack_trace and not debugger_stack_frames:
+	if not debugger_stack_trace and not debugger_stack_trace_label and not debugger_stack_frames:
 		_send_error(ws, id, -32000, "Debugger Stack Trace not found")
 		return
 
-	# get error message from RichTextLabel
+	# get error message: RichTextLabel (4.5/4.6) or Label (4.4)
 	var error_msg := ""
 	if debugger_stack_trace:
 		error_msg = debugger_stack_trace.get_parsed_text()
+	elif debugger_stack_trace_label:
+		error_msg = debugger_stack_trace_label.text
 
 	# get stack frames from Tree
 	var frames := ""
