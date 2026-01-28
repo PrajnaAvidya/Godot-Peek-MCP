@@ -1,6 +1,9 @@
 @tool
 extends Node
 
+# set to true to enable verbose logging for node discovery debugging
+const DEBUG_VERBOSE := false
+
 const PORT := 6970
 const SCREENSHOT_LISTENER_PORT := 6971
 const EDITOR_SCREENSHOT_PATH := "/tmp/godot_peek_editor_screenshot.png"
@@ -14,6 +17,9 @@ var pending_connections: Array[StreamPeerTCP] = []
 # output dock reference
 var output_rich_text: RichTextLabel = null
 var last_output_length: int = 0
+
+# godot version detection (4.6+ changed node names in editor UI)
+var _is_godot_46_plus := false
 
 # pending run requests waiting for error check
 var _pending_run: Dictionary = {}  # {ws, id, action, scene_path, check_time}
@@ -34,6 +40,16 @@ var main_inspector: Control = null
 
 
 func _ready() -> void:
+	# detect godot version for UI path differences
+	var version := Engine.get_version_info()
+	_is_godot_46_plus = version.major > 4 or (version.major == 4 and version.minor >= 6)
+	print("[GodotPeek] Godot %d.%d detected, using %s UI paths" % [
+		version.major, version.minor,
+		"4.6+" if _is_godot_46_plus else "4.5"
+	])
+	if DEBUG_VERBOSE:
+		print("[GodotPeek] DEBUG_VERBOSE is ON - verbose logging enabled")
+
 	tcp_server = TCPServer.new()
 	var err := tcp_server.listen(PORT)
 	if err != OK:
@@ -47,62 +63,126 @@ func _ready() -> void:
 	# note: remote scene tree found lazily when requested (only exists when game running)
 
 
+func _debug(msg: String) -> void:
+	if DEBUG_VERBOSE:
+		print("[GodotPeek:DEBUG] %s" % msg)
+
+
 func _find_output_dock() -> void:
+	_debug("=== _find_output_dock ===")
 	var base := EditorInterface.get_base_control()
 	var rich_texts := _find_all_by_class(base, "RichTextLabel")
+	_debug("found %d RichTextLabel nodes" % rich_texts.size())
 
 	# look for the EditorLog's RichTextLabel
+	# 4.5: node named "EditorLog" contains it
+	# 4.6: node renamed to "Output" under EditorBottomPanel
+	var pattern_desc := "EditorBottomPanel + /Output/" if _is_godot_46_plus else "EditorLog"
+	_debug("using pattern: %s" % pattern_desc)
+
 	for rt: RichTextLabel in rich_texts:
 		var path: String = str(rt.get_path())
-		if "EditorLog" in path:
+		var found := false
+		if _is_godot_46_plus:
+			found = "EditorBottomPanel" in path and "/Output/" in path
+		else:
+			found = "EditorLog" in path
+		_debug("  checking: %s -> %s" % [path, "MATCH" if found else "no match"])
+		if found:
 			output_rich_text = rt
 			last_output_length = rt.get_parsed_text().length()
+			_debug("output_rich_text FOUND")
 			return
 
+	_debug("output_rich_text NOT FOUND")
 	push_warning("[GodotPeek] Could not find Output dock (EditorLog RichTextLabel)")
 
 
 func _find_debugger_dock() -> void:
+	_debug("=== _find_debugger_dock ===")
 	var base := EditorInterface.get_base_control()
 
-	# find the Errors Tree (contains warnings/errors)
-	var trees := _find_all_by_class(base, "Tree")
+	# debugger node path differs by version:
+	# 4.5: "EditorDebuggerNode" in path
+	# 4.6: "/Debugger/" in path (node renamed)
+	var debugger_pattern := "/Debugger/" if _is_godot_46_plus else "EditorDebuggerNode"
+	_debug("debugger_pattern: %s" % debugger_pattern)
 
+	# find the Errors Tree (contains warnings/errors)
+	# note: in 4.6 tab name may include count like "Errors (1)"
+	var trees := _find_all_by_class(base, "Tree")
+	_debug("found %d Tree nodes" % trees.size())
+
+	_debug("--- searching for Errors tree ---")
 	for tree: Tree in trees:
 		var path: String = str(tree.get_path())
-		if "EditorDebuggerNode" in path and "Errors" in path:
+		var matches_debugger := debugger_pattern in path
+		var matches_errors := "/Errors" in path
+		if matches_debugger or matches_errors:
+			_debug("  %s -> debugger:%s errors:%s" % [path, matches_debugger, matches_errors])
+		if matches_debugger and matches_errors:
 			debugger_errors_tree = tree
+			_debug("  -> SELECTED as debugger_errors_tree")
 			break
 
 	# find the Monitors Tree (performance monitors)
+	_debug("--- searching for Monitors tree ---")
 	for tree: Tree in trees:
 		var path: String = str(tree.get_path())
-		if "EditorDebuggerNode" in path and "Monitors" in path:
+		var matches_debugger := debugger_pattern in path
+		var matches_monitors := "/Monitors" in path
+		if matches_debugger or matches_monitors:
+			_debug("  %s -> debugger:%s monitors:%s" % [path, matches_debugger, matches_monitors])
+		if matches_debugger and matches_monitors:
 			monitors_tree = tree
+			_debug("  -> SELECTED as monitors_tree")
 			break
 
 	# find Stack Trace RichTextLabel (error message header)
 	var rich_texts := _find_all_by_class(base, "RichTextLabel")
+	_debug("--- searching for Stack Trace RichTextLabel (found %d total) ---" % rich_texts.size())
 	for rt: RichTextLabel in rich_texts:
 		var path: String = str(rt.get_path())
-		if "EditorDebuggerNode" in path and "Stack Trace" in path:
+		var matches_debugger := debugger_pattern in path
+		var matches_stack := "/Stack Trace/" in path
+		if matches_debugger or matches_stack:
+			_debug("  %s -> debugger:%s stack:%s" % [path, matches_debugger, matches_stack])
+		if matches_debugger and matches_stack:
 			debugger_stack_trace = rt
+			_debug("  -> SELECTED as debugger_stack_trace")
 			break
 
 	# find Stack Trace Tree (actual stack frames)
 	# look for Tree inside Stack Trace/HSplitContainer/.../VBoxContainer
+	_debug("--- searching for Stack Frames tree ---")
 	for tree: Tree in trees:
 		var path: String = str(tree.get_path())
-		if "Stack Trace" in path and "VBoxContainer" in path:
+		var matches_stack := "/Stack Trace/" in path
+		var matches_vbox := "VBoxContainer" in path
+		if matches_stack or matches_vbox:
+			_debug("  %s -> stack:%s vbox:%s" % [path, matches_stack, matches_vbox])
+		if matches_stack and matches_vbox:
 			debugger_stack_frames = tree
+			_debug("  -> SELECTED as debugger_stack_frames")
 			break
 
 	# find EditorDebuggerInspector (shows locals when frame selected)
+	_debug("--- searching for EditorDebuggerInspector ---")
 	var all_nodes := _find_all_nodes(base)
+	_debug("searching %d total nodes for EditorDebuggerInspector class" % all_nodes.size())
 	for node in all_nodes:
 		if node.get_class() == "EditorDebuggerInspector":
 			debugger_inspector = node
+			_debug("  FOUND: %s" % node.get_path())
 			break
+
+	# summary
+	_debug("--- summary ---")
+	_debug("  debugger_errors_tree: %s" % ("FOUND" if debugger_errors_tree else "NOT FOUND"))
+	_debug("  monitors_tree: %s" % ("FOUND" if monitors_tree else "NOT FOUND"))
+	_debug("  debugger_stack_trace: %s" % ("FOUND" if debugger_stack_trace else "NOT FOUND"))
+	_debug("  debugger_stack_frames: %s" % ("FOUND" if debugger_stack_frames else "NOT FOUND"))
+	_debug("  debugger_inspector: %s" % ("FOUND" if debugger_inspector else "NOT FOUND"))
 
 	# warn if critical controls not found
 	if not debugger_errors_tree:
@@ -120,38 +200,76 @@ func _find_debugger_dock() -> void:
 
 
 func _find_remote_scene_tree() -> void:
+	_debug("=== _find_remote_scene_tree ===")
 	var base := EditorInterface.get_base_control()
 	var all_nodes := _find_all_nodes(base)
+	_debug("searching %d total nodes" % all_nodes.size())
+
+	# click "Remote" button to populate the tree (required in both 4.5 and 4.6)
+	_debug("searching for Remote button")
+	var found_remote_btn := false
+	for node in all_nodes:
+		var path := str(node.get_path())
+		if "/Scene/" in path and node is Button:
+			var btn := node as Button
+			_debug("  button in /Scene/: text='%s' pressed=%s path=%s" % [btn.text, btn.button_pressed, path])
+			if btn.text == "Remote":
+				found_remote_btn = true
+				if not btn.button_pressed:
+					_debug("  -> clicking Remote button")
+					btn.button_pressed = true
+					btn.pressed.emit()
+				else:
+					_debug("  -> Remote button already pressed")
+				break
+	if not found_remote_btn:
+		_debug("  Remote button NOT FOUND")
 
 	# EditorDebuggerTree IS the remote scene tree (inherits from Tree)
+	_debug("--- searching for EditorDebuggerTree ---")
 	for node in all_nodes:
 		if node.get_class() == "EditorDebuggerTree":
 			remote_scene_tree = node as Tree
+			_debug("  FOUND: %s" % node.get_path())
 			return
 
-	# no warning here - this is expected when game isn't running
+	_debug("  EditorDebuggerTree NOT FOUND")
+	remote_scene_tree = null
 
 
 func _find_main_inspector() -> void:
+	_debug("=== _find_main_inspector ===")
 	if main_inspector:
+		_debug("already cached, skipping")
 		return
 
 	var base := EditorInterface.get_base_control()
 	var all_nodes := _find_all_nodes(base)
+	_debug("searching %d total nodes for EditorInspector" % all_nodes.size())
 
+	# 4.5: path contains "DockSlotRightUL/Inspector/@EditorInspector"
+	# 4.6: path has extra containers between Inspector and EditorInspector
+	# use looser match: look for EditorInspector under the Inspector dock
 	for node in all_nodes:
 		var path := str(node.get_path())
-		if node.get_class() == "EditorInspector" and "DockSlotRightUL/Inspector/@EditorInspector" in path:
-			main_inspector = node
-			return
+		if node.get_class() == "EditorInspector":
+			var matches_dock := "DockSlotRightUL/Inspector/" in path
+			_debug("  EditorInspector: %s -> dock_match:%s" % [path, matches_dock])
+			if matches_dock:
+				main_inspector = node
+				_debug("  -> SELECTED as main_inspector")
+				return
 
+	_debug("main_inspector NOT FOUND")
 	push_warning("[GodotPeek] Could not find main EditorInspector")
 
 
 func _find_tree_item_by_path(root: TreeItem, path_parts: Array) -> TreeItem:
+	_debug("=== _find_tree_item_by_path: %s ===" % str(path_parts))
 	# navigate down the tree following path_parts
 	# first part should match root itself (usually "root")
 	if path_parts.is_empty():
+		_debug("  empty path_parts, returning root")
 		return root
 
 	var current := root
@@ -159,69 +277,98 @@ func _find_tree_item_by_path(root: TreeItem, path_parts: Array) -> TreeItem:
 
 	# if first part matches root's text, skip it
 	if path_parts[0] == root.get_text(0):
+		_debug("  first part '%s' matches root, skipping" % path_parts[0])
 		start_idx = 1
 
 	# navigate through remaining parts
 	for i in range(start_idx, path_parts.size()):
 		var part: String = path_parts[i]
 		var found := false
+		var children_names: Array[String] = []
 		for child in current.get_children():
-			if child.get_text(0) == part:
+			var child_text := child.get_text(0)
+			children_names.append(child_text)
+			if child_text == part:
 				current = child
 				found = true
 				break
+		_debug("  level %d: looking for '%s' in %s -> %s" % [i, part, children_names, "FOUND" if found else "NOT FOUND"])
 		if not found:
 			return null
 
+	_debug("  final item: '%s'" % current.get_text(0))
 	return current
 
 
 func _get_remote_node_properties(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	_debug("=== _get_remote_node_properties ===")
 	var node_path: String = params.get("node_path", "")
+	_debug("node_path: %s" % node_path)
 	if node_path.is_empty():
 		_send_error(ws, id, -32602, "Missing required parameter: node_path")
 		return
 
 	# find remote scene tree (lazy, only exists when game running)
+	# also clicks the Remote button if needed to populate the tree
 	_find_remote_scene_tree()
 	if not remote_scene_tree:
+		_debug("remote_scene_tree not found, aborting")
 		_send_error(ws, id, -32000, "Remote scene tree not found (is game running?)")
 		return
 
 	# find main inspector (lazy)
 	_find_main_inspector()
 	if not main_inspector:
+		_debug("main_inspector not found, aborting")
 		_send_error(ws, id, -32000, "Main inspector not found")
 		return
 
 	# parse path and find node in tree
 	var path_parts := node_path.trim_prefix("/").split("/")
+	_debug("path_parts: %s" % str(path_parts))
 	var root := remote_scene_tree.get_root()
+	_debug("remote_scene_tree.get_root(): %s" % ("exists" if root else "null"))
+
+	# wait for tree to populate if needed (after clicking Remote button)
+	if not root or root.get_child_count() == 0:
+		_debug("root empty or no children, waiting 0.15s...")
+		await get_tree().create_timer(0.15).timeout
+		root = remote_scene_tree.get_root()
+		_debug("after wait: root=%s child_count=%d" % [
+			"exists" if root else "null",
+			root.get_child_count() if root else 0
+		])
+
 	if not root:
 		_send_error(ws, id, -32000, "Remote scene tree has no root")
 		return
 
 	var target := _find_tree_item_by_path(root, path_parts)
 	if not target:
+		_debug("target tree item not found")
 		_send_error(ws, id, -32000, "Node not found in remote tree: %s" % node_path)
 		return
 
 	# get object ID from TreeItem metadata
 	var object_id = target.get_metadata(0)
+	_debug("object_id from metadata: %s" % str(object_id))
 	if object_id == null:
 		_send_error(ws, id, -32000, "No object ID for node: %s" % node_path)
 		return
 
 	# trigger remote object inspection via objects_selected signal
+	_debug("emitting objects_selected signal with id %s" % str(object_id))
 	remote_scene_tree.set_selected(target, 0)
 	var ids := PackedInt64Array([object_id])
 	remote_scene_tree.objects_selected.emit(ids, 0)
 
 	# wait for inspector to populate
+	_debug("waiting 0.3s for inspector to populate...")
 	await get_tree().create_timer(0.3).timeout
 
 	# extract properties from main inspector
 	var props := _extract_inspector_properties(main_inspector)
+	_debug("extracted %d properties" % props.size())
 	_send_result(ws, id, {
 		"node_path": node_path,
 		"properties": props,
@@ -261,12 +408,15 @@ func _check_pending_run() -> void:
 	if now < _pending_run.check_time:
 		return
 
+	_debug("=== _check_pending_run (error check time reached) ===")
+
 	# time to check for errors
 	var ws: WebSocketPeer = _pending_run.ws
 	var id: Variant = _pending_run.id
 	var action: String = _pending_run.action
 	var scene_path: String = _pending_run.scene_path
 	_pending_run = {}
+	_debug("action: %s, scene_path: %s" % [action, scene_path])
 
 	var error_detected := false
 	var stack_trace := ""
@@ -279,29 +429,43 @@ func _check_pending_run() -> void:
 
 	if debugger_stack_trace:
 		header = debugger_stack_trace.get_parsed_text()
+		_debug("stack_trace header (%d chars): %s" % [header.length(), header.substr(0, 200)])
+	else:
+		_debug("debugger_stack_trace is null, no header")
 
 	if debugger_stack_frames:
 		frames = _get_tree_text(debugger_stack_frames)
+		_debug("stack_frames (%d chars): %s" % [frames.length(), frames.substr(0, 200)])
+	else:
+		_debug("debugger_stack_frames is null, no frames")
 
 	# check for error in header OR if frames exist (frames only appear on error)
 	# note: debugger errors tree contains warnings too (eg INTEGER_DIVISION) which shouldn't stop the game
-	if "Error" in header or "error" in header:
+	var has_error_keyword := "Error" in header or "error" in header
+	var has_frames := not frames.is_empty()
+	_debug("has_error_keyword: %s, has_frames: %s" % [has_error_keyword, has_frames])
+
+	if has_error_keyword:
 		error_detected = true
 		stack_trace = header
-		if not frames.is_empty():
+		if has_frames:
 			stack_trace += "\n\nStack frames:\n" + frames
-	elif not frames.is_empty():
+	elif has_frames:
 		# frames exist but header doesn't say error - still an error condition
 		error_detected = true
 		stack_trace = header + "\n\nStack frames:\n" + frames
 
+	_debug("error_detected: %s" % error_detected)
+
 	if error_detected:
+		_debug("stopping scene due to error")
 		EditorInterface.stop_playing_scene()
 
 	# collect warnings/errors from errors tree (informational, doesn't affect success)
 	var warnings := ""
 	if debugger_errors_tree:
 		warnings = _get_tree_text(debugger_errors_tree)
+		_debug("warnings (%d chars): %s" % [warnings.length(), warnings.substr(0, 200)])
 
 	var result := {
 		"success": not error_detected,
@@ -568,25 +732,35 @@ func _get_debugger_stack_trace(ws: WebSocketPeer, id: Variant) -> void:
 
 
 func _get_debugger_locals(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
+	_debug("=== _get_debugger_locals ===")
 	if not debugger_inspector:
+		_debug("debugger_inspector not found, aborting")
 		_send_error(ws, id, -32000, "EditorDebuggerInspector not found")
 		return
 
 	# optionally select a specific stack frame first
 	var frame_index: int = params.get("frame_index", -1)
+	_debug("frame_index: %d" % frame_index)
 	if frame_index >= 0 and debugger_stack_frames:
+		_debug("selecting frame %d in stack_frames tree" % frame_index)
 		var root := debugger_stack_frames.get_root()
+		_debug("stack_frames root: %s" % ("exists" if root else "null"))
 		if root:
 			var target_item := _get_tree_item_at_index(root, frame_index)
+			_debug("target_item at index %d: %s" % [frame_index, "found" if target_item else "not found"])
 			if target_item:
 				debugger_stack_frames.set_selected(target_item, 0)
 				# emit signal to trigger inspector update
 				debugger_stack_frames.item_selected.emit()
+				_debug("emitted item_selected, waiting 0.05s...")
 				# small delay for inspector to update
 				await get_tree().create_timer(0.05).timeout
+	elif frame_index >= 0:
+		_debug("frame_index specified but debugger_stack_frames is null")
 
 	# extract property info from inspector
 	var locals := _extract_inspector_properties(debugger_inspector)
+	_debug("extracted %d locals" % locals.size())
 	_send_result(ws, id, {
 		"locals": locals,
 		"count": locals.size(),
@@ -596,11 +770,18 @@ func _get_debugger_locals(ws: WebSocketPeer, id: Variant, params: Dictionary) ->
 
 func _get_remote_scene_tree(ws: WebSocketPeer, id: Variant) -> void:
 	# find fresh each time since Remote tab only exists when game is running
+	# also clicks the Remote button if needed to populate the tree
 	_find_remote_scene_tree()
 
 	if not remote_scene_tree:
 		_send_error(ws, id, -32000, "Remote scene tree not found (is game running?)")
 		return
+
+	# wait for tree to populate (may be empty immediately after clicking Remote)
+	var root := remote_scene_tree.get_root()
+	if not root or root.get_child_count() == 0:
+		await get_tree().create_timer(0.15).timeout
+		root = remote_scene_tree.get_root()
 
 	var tree_text := _get_scene_tree_text(remote_scene_tree)
 	_send_result(ws, id, {
@@ -784,12 +965,14 @@ func _get_tree_item_at_index(root: TreeItem, index: int) -> TreeItem:
 
 
 func _extract_inspector_properties(inspector: Control) -> Array:
+	_debug("=== _extract_inspector_properties ===")
 	var properties: Array = []
-	_collect_editor_properties(inspector, properties)
+	_collect_editor_properties(inspector, properties, 0)
+	_debug("total properties extracted: %d" % properties.size())
 	return properties
 
 
-func _collect_editor_properties(node: Node, properties: Array) -> void:
+func _collect_editor_properties(node: Node, properties: Array, depth: int) -> void:
 	var node_class := node.get_class()
 
 	# EditorProperty subclasses contain the actual property data
@@ -858,11 +1041,14 @@ func _collect_editor_properties(node: Node, properties: Array) -> void:
 					break
 
 		if not prop_name.is_empty():
+			_debug("  property: %s = '%s' (%s)" % [prop_name, prop_value, node_class])
 			properties.append({"name": prop_name, "value": prop_value, "type": node_class})
+		else:
+			_debug("  skipped %s (no name extracted)" % node_class)
 
 	# recurse into children
 	for child in node.get_children():
-		_collect_editor_properties(child, properties)
+		_collect_editor_properties(child, properties, depth + 1)
 
 
 func _get_tree_text(tree: Tree) -> String:

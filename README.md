@@ -4,9 +4,9 @@ MCP server for peeking into Godot 4.5+ editor runtime. Run scenes, capture outpu
 
 ## Why Another Godot MCP?
 
-Other Godot MCPs wrap editor actions that LLMs can already do. Claude can edit `.tscn`, `.tres`, and `.gd` files directly; it doesn't need a tool to "add a node" when it can just edit the scene file.
+Other Godot MCPs wrap editor actions that LLMs can already do. Claude can edit `.tscn`, `.tres`, and `.gd` files directly, it doesn't need a tool to "add a node" when it can just edit the scene file.
 
-This MCP focuses on **runtime visibility**: output panel, debugger state, screenshots. The stuff that requires looking at the screen.
+This MCP focuses on **runtime visibility**: output panels, debugger state, screenshots. The stuff that normally requires interacting with the editor.
 
 ## Features
 
@@ -29,10 +29,11 @@ go build -o godot-peek-mcp ./cmd/godot-peek-mcp
 
 ### 2. Install Godot Plugin
 
-Copy `addons/godot_mcp` to your Godot project's addons folder, then enable in Project Settings → Plugins.
+Copy or symlink `addons/godot_mcp` to your Godot project's addons folder, then enable in Project Settings → Plugins.
 
-You should see in Output:
+You should see something like this in Output:
 ```
+[GodotPeek] Godot 4.6 detected, using 4.6+ UI paths
 [GodotPeek] WebSocket server listening on ws://localhost:6970
 ```
 
@@ -125,6 +126,6 @@ Plugin port is in `addons/godot_mcp/mcp_server.gd`.
 
 ## Requirements
 
-- Godot 4.5+
+- Godot 4.5 or 4.6 (auto-detects version for correct UI paths)
 - Any MCP client
 - Go 1.21+ (only if building from source)
