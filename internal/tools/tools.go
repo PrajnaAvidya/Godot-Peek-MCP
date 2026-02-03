@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -148,14 +147,6 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 }
 
-// scheduleAutoStop spawns a goroutine to stop the scene after timeout seconds
-func scheduleAutoStop(client *godot.Client, timeout float64) {
-	go func() {
-		time.Sleep(time.Duration(timeout * float64(time.Second)))
-		client.StopScene(context.Background())
-	}()
-}
-
 // getTimeoutArg extracts the optional timeout_seconds arg from request
 func getTimeoutArg(req mcp.CallToolRequest) float64 {
 	args := req.GetArguments()
@@ -197,8 +188,9 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
+		timeout := getTimeoutArg(req)
 		overrides := getOverridesArg(req)
-		result, err := client.RunMainScene(ctx, overrides)
+		result, err := client.RunMainScene(ctx, overrides, timeout)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run main scene: %v", err)), nil
 		}
@@ -207,10 +199,8 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
-		timeout := getTimeoutArg(req)
 		msg := "Main scene started successfully"
 		if timeout > 0 {
-			scheduleAutoStop(client, timeout)
 			msg = fmt.Sprintf("Main scene started (will auto-stop in %.1fs)", timeout)
 		}
 		if result.Warnings != "" {
@@ -232,8 +222,9 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("missing required parameter: scene_path"), nil
 		}
 
+		timeout := getTimeoutArg(req)
 		overrides := getOverridesArg(req)
-		result, err := client.RunScene(ctx, scenePath, overrides)
+		result, err := client.RunScene(ctx, scenePath, overrides, timeout)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run scene: %v", err)), nil
 		}
@@ -242,10 +233,8 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
-		timeout := getTimeoutArg(req)
 		msg := fmt.Sprintf("Scene started: %s", scenePath)
 		if timeout > 0 {
-			scheduleAutoStop(client, timeout)
 			msg = fmt.Sprintf("Scene started: %s (will auto-stop in %.1fs)", scenePath, timeout)
 		}
 		if result.Warnings != "" {
@@ -262,8 +251,9 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
+		timeout := getTimeoutArg(req)
 		overrides := getOverridesArg(req)
-		result, err := client.RunCurrentScene(ctx, overrides)
+		result, err := client.RunCurrentScene(ctx, overrides, timeout)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to run current scene: %v", err)), nil
 		}
@@ -272,10 +262,8 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
 		}
 
-		timeout := getTimeoutArg(req)
 		msg := "Current scene started successfully"
 		if timeout > 0 {
-			scheduleAutoStop(client, timeout)
 			msg = fmt.Sprintf("Current scene started (will auto-stop in %.1fs)", timeout)
 		}
 		if result.Warnings != "" {

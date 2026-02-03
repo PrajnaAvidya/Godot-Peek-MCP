@@ -25,6 +25,12 @@ var _godot_version := ""
 # pending run requests waiting for error check
 var _pending_run: Dictionary = {}  # {ws, id, action, scene_path, check_time}
 
+# auto-stop tracking
+var _mcp_launch_id: int = 0  # increments each time MCP starts a scene
+var _auto_stop_timer: SceneTreeTimer = null
+var _auto_stop_launch_id: int = 0  # launch_id when timer was scheduled
+var _was_playing: bool = false  # track play state to detect stops
+
 # debugger dock references
 var debugger_errors_tree: Tree = null
 var debugger_stack_trace: RichTextLabel = null
@@ -444,6 +450,7 @@ func _process(_delta: float) -> void:
 	_process_pending_connections()
 	_process_clients()
 	_check_pending_run()
+	_check_play_state()
 
 
 # check if a pending run request is ready for error checking
@@ -528,6 +535,58 @@ func _check_pending_run() -> void:
 		result["scene_path"] = scene_path
 
 	_send_result(ws, id, result)
+
+
+# detect when game stops to invalidate auto-stop timer
+func _check_play_state() -> void:
+	var is_playing := EditorInterface.is_playing_scene()
+	if _was_playing and not is_playing:
+		# game just stopped - invalidate launch_id so pending timer won't match
+		# this handles: user closes game, then reopens manually before timer fires
+		_mcp_launch_id += 1
+		_debug("game stopped, invalidated launch_id (now %d)" % _mcp_launch_id)
+		_auto_stop_timer = null
+		_auto_stop_launch_id = 0
+	_was_playing = is_playing
+
+
+# schedule auto-stop for current scene
+func _schedule_auto_stop(timeout_seconds: float) -> void:
+	if timeout_seconds <= 0:
+		return
+
+	# cancel any existing timer
+	_auto_stop_timer = null
+
+	# capture current launch id
+	_auto_stop_launch_id = _mcp_launch_id
+	var captured_launch_id := _mcp_launch_id
+
+	_debug("scheduling auto-stop in %.1fs for launch_id %d" % [timeout_seconds, captured_launch_id])
+
+	# create timer
+	_auto_stop_timer = get_tree().create_timer(timeout_seconds)
+	_auto_stop_timer.timeout.connect(func():
+		_on_auto_stop_timeout(captured_launch_id)
+	)
+
+
+func _on_auto_stop_timeout(launch_id: int) -> void:
+	_debug("auto-stop timeout fired for launch_id %d (current: %d)" % [launch_id, _mcp_launch_id])
+
+	# only stop if this is still the same launch we scheduled for
+	if launch_id != _mcp_launch_id:
+		_debug("launch_id mismatch, not stopping")
+		return
+
+	if not EditorInterface.is_playing_scene():
+		_debug("game not running, not stopping")
+		return
+
+	print("[GodotPeek] Auto-stopping scene (timeout reached)")
+	EditorInterface.stop_playing_scene()
+	_auto_stop_timer = null
+	_auto_stop_launch_id = 0
 
 
 func _accept_new_connections() -> void:
@@ -634,8 +693,16 @@ func _run_main_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	# increment launch id before starting
+	_mcp_launch_id += 1
+	_debug("run_main_scene: launch_id now %d" % _mcp_launch_id)
+
 	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_main_scene()
+
+	# schedule auto-stop if timeout specified
+	var timeout: float = params.get("timeout_seconds", 0.0)
+	_schedule_auto_stop(timeout)
 
 	# queue error check (needs time for game to start and error to appear)
 	_pending_run = {
@@ -656,8 +723,16 @@ func _run_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> void:
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	# increment launch id before starting
+	_mcp_launch_id += 1
+	_debug("run_scene: launch_id now %d" % _mcp_launch_id)
+
 	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_custom_scene(scene_path)
+
+	# schedule auto-stop if timeout specified
+	var timeout: float = params.get("timeout_seconds", 0.0)
+	_schedule_auto_stop(timeout)
 
 	# queue error check for 1500ms from now
 	_pending_run = {
@@ -673,8 +748,16 @@ func _run_current_scene(ws: WebSocketPeer, id: Variant, params: Dictionary) -> v
 	if EditorInterface.is_playing_scene():
 		EditorInterface.stop_playing_scene()
 
+	# increment launch id before starting
+	_mcp_launch_id += 1
+	_debug("run_current_scene: launch_id now %d" % _mcp_launch_id)
+
 	_write_overrides(params.get("overrides", {}))
 	EditorInterface.play_current_scene()
+
+	# schedule auto-stop if timeout specified
+	var timeout: float = params.get("timeout_seconds", 0.0)
+	_schedule_auto_stop(timeout)
 
 	# queue error check for 1500ms from now
 	_pending_run = {

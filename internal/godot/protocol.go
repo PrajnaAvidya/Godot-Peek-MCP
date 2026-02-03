@@ -50,18 +50,21 @@ type Overrides map[string]map[string]interface{}
 
 // RunMainSceneParams for run_main_scene method
 type RunMainSceneParams struct {
-	Overrides Overrides `json:"overrides,omitempty"`
+	Overrides      Overrides `json:"overrides,omitempty"`
+	TimeoutSeconds float64   `json:"timeout_seconds,omitempty"`
 }
 
 // RunSceneParams for run_scene method
 type RunSceneParams struct {
-	ScenePath string    `json:"scene_path"`
-	Overrides Overrides `json:"overrides,omitempty"`
+	ScenePath      string    `json:"scene_path"`
+	Overrides      Overrides `json:"overrides,omitempty"`
+	TimeoutSeconds float64   `json:"timeout_seconds,omitempty"`
 }
 
 // RunCurrentSceneParams for run_current_scene method
 type RunCurrentSceneParams struct {
-	Overrides Overrides `json:"overrides,omitempty"`
+	Overrides      Overrides `json:"overrides,omitempty"`
+	TimeoutSeconds float64   `json:"timeout_seconds,omitempty"`
 }
 
 // GetOutputParams for get_output method

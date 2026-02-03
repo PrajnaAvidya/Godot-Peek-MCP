@@ -273,10 +273,10 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 }
 
 // RunMainScene starts the project's main scene
-func (c *Client) RunMainScene(ctx context.Context, overrides Overrides) (*GenericResult, error) {
-	var params interface{}
-	if len(overrides) > 0 {
-		params = RunMainSceneParams{Overrides: overrides}
+func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout float64) (*GenericResult, error) {
+	params := RunMainSceneParams{
+		Overrides:      overrides,
+		TimeoutSeconds: timeout,
 	}
 	resp, err := c.sendRequest(ctx, "run_main_scene", params)
 	if err != nil {
@@ -296,10 +296,11 @@ func (c *Client) RunMainScene(ctx context.Context, overrides Overrides) (*Generi
 }
 
 // RunScene starts a specific scene
-func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overrides) (*GenericResult, error) {
-	params := RunSceneParams{ScenePath: scenePath}
-	if len(overrides) > 0 {
-		params.Overrides = overrides
+func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overrides, timeout float64) (*GenericResult, error) {
+	params := RunSceneParams{
+		ScenePath:      scenePath,
+		Overrides:      overrides,
+		TimeoutSeconds: timeout,
 	}
 	resp, err := c.sendRequest(ctx, "run_scene", params)
 	if err != nil {
@@ -319,10 +320,10 @@ func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overr
 }
 
 // RunCurrentScene starts the currently open scene
-func (c *Client) RunCurrentScene(ctx context.Context, overrides Overrides) (*GenericResult, error) {
-	var params interface{}
-	if len(overrides) > 0 {
-		params = RunCurrentSceneParams{Overrides: overrides}
+func (c *Client) RunCurrentScene(ctx context.Context, overrides Overrides, timeout float64) (*GenericResult, error) {
+	params := RunCurrentSceneParams{
+		Overrides:      overrides,
+		TimeoutSeconds: timeout,
 	}
 	resp, err := c.sendRequest(ctx, "run_current_scene", params)
 	if err != nil {
