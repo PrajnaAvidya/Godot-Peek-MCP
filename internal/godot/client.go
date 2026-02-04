@@ -1,28 +1,31 @@
 package godot
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"os"
 	"sync"
 	"time"
-
-	"github.com/coder/websocket"
 )
 
 const (
-	DefaultURL          = "ws://localhost:6970"
+	DefaultSocketPath   = "/tmp/godot-peek.sock"
+	OverridesPath       = "/tmp/godot_peek_overrides.json"
 	MaxReconnectBackoff = 30 * time.Second
 	MaxOutputBuffer     = 1000
 )
 
-// Client manages WebSocket connection to Godot editor plugin
+// Client manages Unix socket connection to Godot editor plugin
 type Client struct {
-	url string
+	socketPath string
 
 	mu           sync.RWMutex
-	conn         *websocket.Conn
+	conn         net.Conn
+	reader       *bufio.Scanner
 	connected    bool
 	outputBuffer []OutputNotification
 
@@ -38,19 +41,22 @@ type Client struct {
 }
 
 // NewClient creates a new Godot client
-func NewClient(url string) *Client {
-	if url == "" {
-		url = DefaultURL
+func NewClient(socketPath string) *Client {
+	if socketPath == "" {
+		socketPath = os.Getenv("GODOT_PEEK_SOCKET")
+		if socketPath == "" {
+			socketPath = DefaultSocketPath
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Client{
-		url:      url,
-		pending:  make(map[int64]chan *Response),
-		outputCh: make(chan OutputNotification, 100),
-		ctx:      ctx,
-		cancel:   cancel,
+		socketPath: socketPath,
+		pending:    make(map[int64]chan *Response),
+		outputCh:   make(chan OutputNotification, 100),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 
 	return c
@@ -58,20 +64,21 @@ func NewClient(url string) *Client {
 
 // Connect establishes connection to Godot
 func (c *Client) Connect(ctx context.Context) error {
-	conn, _, err := websocket.Dial(ctx, c.url, nil)
+	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return fmt.Errorf("dial unix socket: %w", err)
 	}
 
 	c.mu.Lock()
 	c.conn = conn
+	c.reader = bufio.NewScanner(conn)
 	c.connected = true
 	c.mu.Unlock()
 
 	// start reading messages
 	go c.readLoop()
 
-	log.Printf("[godot] Connected to %s", c.url)
+	log.Printf("[godot] Connected to %s", c.socketPath)
 	return nil
 }
 
@@ -90,12 +97,12 @@ func (c *Client) Close() error {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
-		return c.conn.Close(websocket.StatusNormalClosure, "closing")
+		return c.conn.Close()
 	}
 	return nil
 }
 
-// readLoop handles incoming WebSocket messages
+// readLoop handles incoming messages from Unix socket
 func (c *Client) readLoop() {
 	defer func() {
 		c.mu.Lock()
@@ -111,19 +118,26 @@ func (c *Client) readLoop() {
 		}
 
 		c.mu.RLock()
-		conn := c.conn
+		reader := c.reader
 		c.mu.RUnlock()
 
-		if conn == nil {
+		if reader == nil {
 			return
 		}
 
-		_, data, err := conn.Read(c.ctx)
-		if err != nil {
-			if c.ctx.Err() == nil {
-				log.Printf("[godot] Read error: %v", err)
+		// read one line (newline-delimited JSON)
+		if !reader.Scan() {
+			if err := reader.Err(); err != nil {
+				if c.ctx.Err() == nil {
+					log.Printf("[godot] Read error: %v", err)
+				}
 			}
 			return
+		}
+
+		data := reader.Bytes()
+		if len(data) == 0 {
+			continue
 		}
 
 		c.handleMessage(data)
@@ -135,7 +149,6 @@ func (c *Client) handleMessage(data []byte) {
 	log.Printf("[godot] Received message: %s", string(data)[:min(len(data), 200)])
 
 	// try to parse as response (has id)
-	// note: Godot sends id as float (1.0), so use float64
 	var msg struct {
 		ID     *float64        `json:"id"`
 		Method string          `json:"method"`
@@ -221,6 +234,27 @@ func (c *Client) GetOutput(clear bool) []OutputNotification {
 	return result
 }
 
+// writeOverrides writes the overrides file for the runtime helper to read
+func writeOverrides(overrides Overrides) error {
+	if len(overrides) == 0 {
+		// delete file if exists
+		os.Remove(OverridesPath)
+		return nil
+	}
+
+	data, err := json.Marshal(overrides)
+	if err != nil {
+		return fmt.Errorf("marshal overrides: %w", err)
+	}
+
+	if err := os.WriteFile(OverridesPath, data, 0644); err != nil {
+		return fmt.Errorf("write overrides file: %w", err)
+	}
+
+	log.Printf("[godot] Wrote overrides to %s", OverridesPath)
+	return nil
+}
+
 // sendRequest sends a request and waits for response
 func (c *Client) sendRequest(ctx context.Context, method string, params interface{}) (*Response, error) {
 	c.mu.RLock()
@@ -244,6 +278,9 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
+	// add newline delimiter for line-based protocol
+	data = append(data, '\n')
+
 	// register pending request
 	respCh := make(chan *Response, 1)
 	c.pendingMu.Lock()
@@ -257,7 +294,7 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 	}()
 
 	// send message
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+	if _, err := conn.Write(data); err != nil {
 		return nil, fmt.Errorf("write: %w", err)
 	}
 
@@ -274,10 +311,16 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 
 // RunMainScene starts the project's main scene
 func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout float64) (*GenericResult, error) {
-	params := RunMainSceneParams{
-		Overrides:      overrides,
-		TimeoutSeconds: timeout,
+	// write overrides file before sending command
+	if err := writeOverrides(overrides); err != nil {
+		return nil, fmt.Errorf("write overrides: %w", err)
 	}
+
+	// only send timeout_seconds in params (overrides handled via file)
+	params := struct {
+		TimeoutSeconds float64 `json:"timeout_seconds,omitempty"`
+	}{TimeoutSeconds: timeout}
+
 	resp, err := c.sendRequest(ctx, "run_main_scene", params)
 	if err != nil {
 		return nil, err
@@ -297,11 +340,17 @@ func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout 
 
 // RunScene starts a specific scene
 func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overrides, timeout float64) (*GenericResult, error) {
-	params := RunSceneParams{
-		ScenePath:      scenePath,
-		Overrides:      overrides,
-		TimeoutSeconds: timeout,
+	// write overrides file before sending command
+	if err := writeOverrides(overrides); err != nil {
+		return nil, fmt.Errorf("write overrides: %w", err)
 	}
+
+	// only send scene_path and timeout_seconds in params
+	params := struct {
+		ScenePath      string  `json:"scene_path"`
+		TimeoutSeconds float64 `json:"timeout_seconds,omitempty"`
+	}{ScenePath: scenePath, TimeoutSeconds: timeout}
+
 	resp, err := c.sendRequest(ctx, "run_scene", params)
 	if err != nil {
 		return nil, err
@@ -321,10 +370,16 @@ func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overr
 
 // RunCurrentScene starts the currently open scene
 func (c *Client) RunCurrentScene(ctx context.Context, overrides Overrides, timeout float64) (*GenericResult, error) {
-	params := RunCurrentSceneParams{
-		Overrides:      overrides,
-		TimeoutSeconds: timeout,
+	// write overrides file before sending command
+	if err := writeOverrides(overrides); err != nil {
+		return nil, fmt.Errorf("write overrides: %w", err)
 	}
+
+	// only send timeout_seconds in params
+	params := struct {
+		TimeoutSeconds float64 `json:"timeout_seconds,omitempty"`
+	}{TimeoutSeconds: timeout}
+
 	resp, err := c.sendRequest(ctx, "run_current_scene", params)
 	if err != nil {
 		return nil, err
