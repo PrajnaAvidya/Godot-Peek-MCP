@@ -543,11 +543,36 @@ func (c *Client) GetRemoteNodeProperties(ctx context.Context, nodePath string) (
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+
+	// auto-retry if pending (inspector needs time to populate after node selection)
+	if result.Pending {
+		time.Sleep(350 * time.Millisecond)
+		resp, err = c.sendRequest(ctx, "get_remote_node_properties", params)
+		if err != nil {
+			return nil, err
+		}
+		if resp.Error != nil {
+			return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+		}
+		if resp.Result != nil {
+			if err := json.Unmarshal(*resp.Result, &result); err != nil {
+				return nil, fmt.Errorf("unmarshal result: %w", err)
+			}
+		}
+	}
+
 	return &result, nil
 }
 
 // GetScreenshot captures a screenshot from game or editor viewports
+// game target uses direct UDP to autoload, editor target goes through C++
 func (c *Client) GetScreenshot(ctx context.Context, target string) (*ScreenshotResult, error) {
+	// game screenshots go directly via UDP (no C++ passthrough needed)
+	if target == "game" {
+		return c.GetGameScreenshot(ctx)
+	}
+
+	// editor screenshots require C++ (needs editor viewport access)
 	params := GetScreenshotParams{Target: target}
 	resp, err := c.sendRequest(ctx, "get_screenshot", params)
 	if err != nil {
@@ -582,5 +607,254 @@ func (c *Client) GetMonitors(ctx context.Context) (*MonitorsResult, error) {
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+	return &result, nil
+}
+
+// SetBreakpoint sets or clears a breakpoint at a specific file:line
+func (c *Client) SetBreakpoint(ctx context.Context, path string, line int, enabled bool) (*GenericResult, error) {
+	params := SetBreakpointParams{
+		Path:    path,
+		Line:    line,
+		Enabled: enabled,
+	}
+	resp, err := c.sendRequest(ctx, "set_breakpoint", params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// ClearBreakpoints removes all breakpoints
+func (c *Client) ClearBreakpoints(ctx context.Context) (*GenericResult, error) {
+	resp, err := c.sendRequest(ctx, "clear_breakpoints", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// GetDebuggerState returns the current debugger state (paused, active, debuggable)
+func (c *Client) GetDebuggerState(ctx context.Context) (*DebuggerStateResult, error) {
+	resp, err := c.sendRequest(ctx, "get_debugger_state", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result DebuggerStateResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// DebugContinue resumes execution after hitting a breakpoint
+func (c *Client) DebugContinue(ctx context.Context) (*GenericResult, error) {
+	resp, err := c.sendRequest(ctx, "debug_continue", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// DebugStep performs a step operation (into, over, or out)
+func (c *Client) DebugStep(ctx context.Context, mode string) (*GenericResult, error) {
+	params := DebugStepParams{Mode: mode}
+	resp, err := c.sendRequest(ctx, "debug_step", params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// DebugBreak pauses execution of the running game
+func (c *Client) DebugBreak(ctx context.Context) (*GenericResult, error) {
+	resp, err := c.sendRequest(ctx, "debug_break", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result GenericResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// UDP port for game autoload (peek_runtime_helper.gd)
+const GameUDPPort = 6971
+
+// sendGameUDP sends a request directly to the game autoload via UDP
+// bypasses C++ extension for game-side operations
+func sendGameUDP(ctx context.Context, request interface{}) ([]byte, error) {
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// resolve UDP address
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", GameUDPPort))
+	if err != nil {
+		return nil, fmt.Errorf("resolve udp addr: %w", err)
+	}
+
+	// create UDP connection
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial udp: %w", err)
+	}
+	defer conn.Close()
+
+	// set deadline based on context or default timeout
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(5 * time.Second)
+	}
+	conn.SetDeadline(deadline)
+
+	// send request
+	if _, err := conn.Write(data); err != nil {
+		return nil, fmt.Errorf("write udp: %w", err)
+	}
+
+	// read response
+	buf := make([]byte, 65535)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("read udp: %w", err)
+	}
+
+	return buf[:n], nil
+}
+
+// EvaluateExpression evaluates a GDScript expression in the running game
+// communicates directly with game autoload via UDP (no C++ passthrough)
+func (c *Client) EvaluateExpression(ctx context.Context, expression string) (*EvaluateResult, error) {
+	request := map[string]string{
+		"cmd":        "evaluate",
+		"expression": expression,
+	}
+
+	respData, err := sendGameUDP(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("udp request failed: %w", err)
+	}
+
+	var result EvaluateResult
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if result.Error != "" {
+		return nil, fmt.Errorf("evaluate error: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+// GetGameScreenshot captures the game viewport directly via UDP
+// bypasses C++ extension (only editor screenshots need C++)
+func (c *Client) GetGameScreenshot(ctx context.Context) (*ScreenshotResult, error) {
+	request := map[string]string{
+		"cmd": "screenshot",
+	}
+
+	respData, err := sendGameUDP(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("udp request failed: %w", err)
+	}
+
+	var result ScreenshotResult
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	// check for error in response
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	json.Unmarshal(respData, &errResp)
+	if errResp.Error != "" {
+		return nil, fmt.Errorf("screenshot error: %s", errResp.Error)
+	}
+
+	result.Target = "game"
+	return &result, nil
+}
+
+// SendInput injects input events into the running game (direct UDP)
+func (c *Client) SendInput(ctx context.Context, inputType string, params map[string]interface{}) (*InputResult, error) {
+	request := map[string]interface{}{
+		"cmd":  "input",
+		"type": inputType,
+	}
+	// merge additional params
+	for k, v := range params {
+		request[k] = v
+	}
+
+	respData, err := sendGameUDP(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("udp request failed: %w", err)
+	}
+
+	var result InputResult
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if result.Error != "" {
+		return nil, fmt.Errorf("input error: %s", result.Error)
+	}
+
 	return &result, nil
 }

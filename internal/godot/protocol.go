@@ -138,6 +138,8 @@ type NodePropertiesResult struct {
 	NodePath   string          `json:"node_path"`
 	Properties []LocalVariable `json:"properties"`
 	Count      int             `json:"count"`
+	Pending    bool            `json:"pending,omitempty"` // if true, caller should retry after short delay
+	Message    string          `json:"message,omitempty"`
 }
 
 // GetScreenshotParams for get_screenshot method
@@ -169,4 +171,37 @@ type MonitorGroup struct {
 type MonitorsResult struct {
 	Monitors []MonitorGroup `json:"monitors"`
 	Count    int            `json:"count"`
+}
+
+// SetBreakpointParams for set_breakpoint method
+type SetBreakpointParams struct {
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Enabled bool   `json:"enabled"`
+}
+
+// DebugStepParams for debug_step method
+type DebugStepParams struct {
+	Mode string `json:"mode"` // "into", "over", "out"
+}
+
+// DebuggerStateResult from get_debugger_state
+type DebuggerStateResult struct {
+	Paused     bool `json:"paused"`
+	Active     bool `json:"active"`
+	Debuggable bool `json:"debuggable"`
+}
+
+// EvaluateResult from evaluate_expression (direct UDP to game)
+type EvaluateResult struct {
+	Value string `json:"value"`
+	Type  string `json:"type"`
+	Error string `json:"error,omitempty"`
+}
+
+// InputResult from send_input (direct UDP to game)
+type InputResult struct {
+	Success bool   `json:"success"`
+	Type    string `json:"type"`
+	Error   string `json:"error,omitempty"`
 }
