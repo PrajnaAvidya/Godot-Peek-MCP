@@ -14,9 +14,11 @@ This MCP focuses on **runtime visibility**: output panels, debugger state, scree
 - **Variable Overrides**: Set autoload variables at startup (e.g. enable debug mode)
 - **Output Capture**: Read the Output panel
 - **Debugger Integration**: Errors, stack traces, local variables, performance monitors
+- **Debugger Control**: Set breakpoints, step through code, pause/continue (C++ exclusive)
 - **Runtime Inspection**: Node tree and properties from running game
 - **Screenshots**: Editor viewports or running game
 - **Expression Evaluation**: Evaluate arbitrary GDScript in running game
+- **Input Injection**: Send fake input events for automated testing
 
 ## Quick Start
 
@@ -28,17 +30,26 @@ Download a binary from [Releases](https://github.com/PrajnaAvidya/godot-peek-mcp
 go build -o godot-peek-mcp ./cmd/godot-peek-mcp
 ```
 
-### 2. Install Godot Plugin
+### 2. Build the C++ Extension
+
+The extension requires [godot-cpp](https://github.com/godotengine/godot-cpp) at `~/Code/godot-cpp`:
+
+```bash
+cd extension && scons platform=linux target=editor
+```
+
+This outputs to `addons/godot_mcp/bin/`.
+
+### 3. Install Godot Plugin
 
 Copy or symlink `addons/godot_mcp` to your Godot project's addons folder, then enable in Project Settings → Plugins.
 
 You should see something like this in Output:
 ```
-[GodotPeek] Godot 4.5 detected
-[GodotPeek] WebSocket server listening on ws://localhost:6970
+[GodotPeek] Socket server listening on /tmp/godot-peek.sock
 ```
 
-### 3. Register with MCP Client
+### 4. Register with MCP Client
 
 ```bash
 claude mcp add godot-peek /path/to/godot-peek-mcp/godot-peek-mcp
@@ -78,6 +89,19 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 |------|-------------|------------|
 | `get_screenshot` | Capture editor or game | `target`: "editor" or "game" |
 
+### Debugger Control
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `set_breakpoint` | Set or clear a breakpoint | `path`, `line`, `enabled` |
+| `clear_breakpoints` | Clear all breakpoints | none |
+| `get_debugger_state` | Check if paused/active/debuggable | none |
+| `debug_continue` | Continue execution | none |
+| `debug_step` | Step into/over/out | `mode`: "into", "over", "out" |
+| `debug_break` | Pause execution | none |
+
+**Note:** Breakpoints only work with Godot's built-in script editor. If using an external editor, breakpoints won't trigger.
+
 ### Expression Evaluation
 
 | Tool | Description | Parameters |
@@ -107,11 +131,17 @@ Useful for automated testing and UI interaction.
 │   Claude Code       │◄──────────────►│    Go MCP Server    │
 │   (MCP Client)      │                │   (godot-peek-mcp)  │
 └─────────────────────┘                └──────────┬──────────┘
-                                                  │ WebSocket
-                                                  │ ws://localhost:6970
+                                                  │ Unix socket
+                                                  │ /tmp/godot-peek.sock
                                        ┌──────────▼──────────┐
-                                       │  Godot EditorPlugin │
+                                       │  C++ GDExtension    │
                                        │  (addons/godot_mcp) │
+                                       └──────────┬──────────┘
+                                                  │ UDP (game features)
+                                                  │ port 6971
+                                       ┌──────────▼──────────┐
+                                       │  Runtime Helper     │
+                                       │  (running game)     │
                                        └─────────────────────┘
 ```
 
@@ -129,11 +159,12 @@ Useful for automated testing and UI interaction.
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `GODOT_MCP_URL` | `ws://localhost:6970` | WebSocket URL |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Socket path | `/tmp/godot-peek.sock` | Unix socket for Go ↔ C++ communication |
+| UDP port | `6971` | Game-side features (screenshots, eval, input) |
 
-Plugin port is in `addons/godot_mcp/mcp_server.gd`.
+Paths are currently hardcoded in the source.
 
 ## Tips for LLM Users
 
@@ -155,4 +186,5 @@ Plugin port is in `addons/godot_mcp/mcp_server.gd`.
 
 - Godot 4.4, 4.5, or 4.6 (explicit version support, unsupported versions are rejected)
 - Any MCP client
-- Go 1.21+ (only if building from source)
+- Go 1.21+ (if building MCP server from source)
+- SCons + godot-cpp (if building C++ extension from source)

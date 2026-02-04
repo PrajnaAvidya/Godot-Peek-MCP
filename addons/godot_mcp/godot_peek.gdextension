@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "godot_peek_library_init"
+compatibility_minimum = "4.2"
+
+[libraries]
+linux.editor.x86_64 = "res://addons/godot_mcp/bin/libgodot_mcp.linux.editor.x86_64.so"
+linux.debug.x86_64 = "res://addons/godot_mcp/bin/libgodot_mcp.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://addons/godot_mcp/bin/libgodot_mcp.linux.template_release.x86_64.so"
