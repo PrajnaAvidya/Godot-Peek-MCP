@@ -487,6 +487,7 @@ func (c *Client) GetLocals(ctx context.Context, frameIndex int) (*LocalsResult, 
 }
 
 // GetRemoteSceneTree fetches instantiated node tree from running game
+// automatically retries once if the C++ extension indicates pending (Remote button was just clicked)
 func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, error) {
 	resp, err := c.sendRequest(ctx, "get_remote_scene_tree", nil)
 	if err != nil {
@@ -502,6 +503,26 @@ func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, erro
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+
+	// if pending, wait and retry once (Remote button was clicked, tree needs time to populate)
+	if result.Pending {
+		time.Sleep(150 * time.Millisecond)
+
+		resp, err = c.sendRequest(ctx, "get_remote_scene_tree", nil)
+		if err != nil {
+			return nil, err
+		}
+		if resp.Error != nil {
+			return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+		}
+
+		if resp.Result != nil {
+			if err := json.Unmarshal(*resp.Result, &result); err != nil {
+				return nil, fmt.Errorf("unmarshal result: %w", err)
+			}
+		}
+	}
+
 	return &result, nil
 }
 

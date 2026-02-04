@@ -122,8 +122,10 @@ type GenericResult struct {
 
 // SceneTreeResult from get_remote_scene_tree
 type SceneTreeResult struct {
-	Tree   string `json:"tree"`
-	Length int    `json:"length"`
+	Tree    string `json:"tree"`
+	Length  int    `json:"length"`
+	Pending bool   `json:"pending,omitempty"` // if true, caller should retry after short delay
+	Message string `json:"message,omitempty"`
 }
 
 // GetNodePropertiesParams for get_remote_node_properties method
