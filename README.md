@@ -77,8 +77,8 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 |------|-------------|------------|
 | `get_output` | Get Output panel content | `clear`, `new_only` (optional) |
 | `get_debugger_errors` | Get Debugger Errors tab | none |
-| `get_debugger_stack_trace` | Get stack trace when paused | none |
-| `get_debugger_locals` | Get local variables | `frame_index` (optional, 0=top) |
+| `get_debugger_stack_trace` | Get stack trace when paused on error/breakpoint | none |
+| `get_debugger_locals` | Get local variables when paused on error/breakpoint | `frame_index` (optional, 0=top) |
 | `get_monitors` | Get performance monitors (FPS, memory, etc.) | none |
 | `get_remote_scene_tree` | Get node tree from running game | none |
 | `get_remote_node_properties` | Get node properties | `node_path` (e.g. /root/game/Player) |
@@ -128,28 +128,31 @@ Useful for automated testing and UI interaction.
 
 ```
 ┌─────────────────────┐     stdio      ┌─────────────────────┐
-│   Claude Code       │◄──────────────►│    Go MCP Server    │
-│   (MCP Client)      │                │   (godot-peek-mcp)  │
-└─────────────────────┘                └──────────┬──────────┘
-                                                  │ Unix socket
-                                                  │ /tmp/godot-peek.sock
-                                       ┌──────────▼──────────┐
-                                       │  C++ GDExtension    │
-                                       │  (addons/godot_mcp) │
-                                       └──────────┬──────────┘
-                                                  │ UDP (game features)
-                                                  │ port 6971
-                                       ┌──────────▼──────────┐
-                                       │  Runtime Helper     │
-                                       │  (running game)     │
-                                       └─────────────────────┘
+│   Claude Code #1    │◄──────────────►│  Go MCP Server #1   │──┐
+└─────────────────────┘                └─────────────────────┘  │
+┌─────────────────────┐     stdio      ┌─────────────────────┐  │ Unix socket
+│   Claude Code #2    │◄──────────────►│  Go MCP Server #2   │──┤ /tmp/godot-peek.sock
+└─────────────────────┘                └─────────────────────┘  │
+                                            ...                 │
+                                       ┌────────────────────────▼┐
+                                       │  C++ GDExtension        │
+                                       │  (addons/godot_mcp)     │
+                                       └────────────┬────────────┘
+                                                    │ UDP (game features)
+                                                    │ port 6971
+                                       ┌────────────▼────────────┐
+                                       │  Runtime Helper         │
+                                       │  (running game)         │
+                                       └─────────────────────────┘
 ```
+
+Multiple Claude Code sessions can connect simultaneously. Each session spawns its own Go MCP server process, and the C++ extension accepts all connections concurrently.
 
 ## Notes
 
 **Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.
 
-**Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top).
+**Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top). **Important:** `get_debugger_stack_trace` and `get_debugger_locals` only have data when the game is paused on a runtime error or breakpoint - calling them during normal execution returns empty results.
 
 **Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
 
@@ -178,7 +181,7 @@ Paths are currently hardcoded in the source.
 
 **Screenshots for visual bugs**: `get_screenshot target=game` shows exactly what the player sees.
 
-**Evaluate expressions**: Query any game state without print statements. `evaluate_expression "get_tree().current_scene.name"` or modify state: `evaluate_expression "get_node('/root/Main/Player').set('health', 100)"` (use `.set()` - assignment operators don't work in Expression class).
+**Evaluate expressions**: Query any game state without print statements. `evaluate_expression "get_tree().current_scene.name"` or modify state: `evaluate_expression "get_node('/root/Main/Player').set('health', 100)"` (use `.set()` - assignment operators don't work in Expression class). **Note:** If the expression triggers a runtime error, the tool call will timeout - this is expected since the game crashes before it can respond.
 
 **Input injection**: Send fake input events for automated testing. `send_input type=action action=jump` or `send_input type=key keycode=SPACE pressed=true`.
 

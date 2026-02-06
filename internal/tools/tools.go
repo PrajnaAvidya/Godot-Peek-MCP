@@ -90,7 +90,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// get_debugger_stack_trace - get stack trace on runtime error
 	s.AddTool(
 		mcp.NewTool("get_debugger_stack_trace",
-			mcp.WithDescription("Get stack trace from Godot Debugger (populated when game crashes/pauses on error)"),
+			mcp.WithDescription("Get stack trace from Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
 		),
 		makeGetStackTrace(client),
 	)
@@ -98,7 +98,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// get_debugger_locals - get local variables for selected stack frame
 	s.AddTool(
 		mcp.NewTool("get_debugger_locals",
-			mcp.WithDescription("Get local variables from Godot Debugger for a specific stack frame"),
+			mcp.WithDescription("Get local variables from Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
 			mcp.WithNumber("frame_index",
 				mcp.Description("Stack frame index (0=top/current, higher=callers). Defaults to currently selected frame."),
 			),
@@ -211,7 +211,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// evaluate_expression - evaluate GDScript in running game
 	s.AddTool(
 		mcp.NewTool("evaluate_expression",
-			mcp.WithDescription("Evaluate a GDScript expression in the running game. Can access scene tree, call methods, get/set properties. Requires game to be running with peek_runtime_helper autoload. Note: use .set('prop', value) to modify properties - assignment operators don't work in Expression class."),
+			mcp.WithDescription("Evaluate a GDScript expression in the running game. Can access scene tree, call methods, get/set properties. Requires game to be running with peek_runtime_helper autoload. Note: use .set('prop', value) to modify properties - assignment operators don't work in Expression class. WARNING: If expression triggers a runtime error, this tool will timeout (game crashes before responding) - this is expected."),
 			mcp.WithString("expression",
 				mcp.Required(),
 				mcp.Description("GDScript expression to evaluate, e.g. 'get_node(\"/root/Main/Player\").health' or 'get_node(\"/root/Main\").set(\"speed\", 10)'"),

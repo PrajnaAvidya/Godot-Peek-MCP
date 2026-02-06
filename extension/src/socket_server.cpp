@@ -46,8 +46,8 @@ bool SocketServer::start(const std::string& path) {
     }
 
     // start listening for connections
-    // 1 = backlog (max pending connections) - we only expect one client
-    if (listen(server_fd, 1) < 0) {
+    // backlog of 5 to handle multiple MCP server processes connecting
+    if (listen(server_fd, 5) < 0) {
         close(server_fd);
         server_fd = -1;
         unlink(socket_path.c_str());
@@ -64,10 +64,13 @@ bool SocketServer::start(const std::string& path) {
 }
 
 void SocketServer::stop() {
-    if (client_fd >= 0) {
-        close(client_fd);
-        client_fd = -1;
+    for (auto& client : clients) {
+        if (client.fd >= 0) {
+            close(client.fd);
+        }
     }
+    clients.clear();
+
     if (server_fd >= 0) {
         close(server_fd);
         server_fd = -1;
@@ -76,7 +79,6 @@ void SocketServer::stop() {
         unlink(socket_path.c_str());
         socket_path.clear();
     }
-    read_buffer.clear();
 }
 
 void SocketServer::poll(MessageCallback on_message) {
@@ -84,58 +86,55 @@ void SocketServer::poll(MessageCallback on_message) {
         return;
     }
 
-    // if no client connected, try to accept one
-    if (client_fd < 0) {
-        // accept() returns new socket for the client connection
-        // or -1 if no client is waiting (because we're non-blocking)
-        client_fd = accept(server_fd, nullptr, nullptr);
-        if (client_fd >= 0) {
-            // also set client socket to non-blocking
-            int flags = fcntl(client_fd, F_GETFL, 0);
-            fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+    // accept all pending connections (drain the backlog)
+    while (true) {
+        int new_fd = accept(server_fd, nullptr, nullptr);
+        if (new_fd < 0) {
+            break;  // no more pending connections (EAGAIN/EWOULDBLOCK)
         }
+        // set client socket to non-blocking
+        int flags = fcntl(new_fd, F_GETFL, 0);
+        fcntl(new_fd, F_SETFL, flags | O_NONBLOCK);
+        clients.push_back({new_fd, ""});
     }
 
-    // if we have a client, try to read data
-    if (client_fd >= 0) {
+    // read from all connected clients
+    // iterate by index so we can remove disconnected ones
+    for (size_t i = 0; i < clients.size(); ) {
+        auto& client = clients[i];
         char buf[4096];
-        // read() returns:
-        //   > 0: number of bytes read
-        //   0: client disconnected (EOF)
-        //   -1: error or would block (check errno)
-        ssize_t n = read(client_fd, buf, sizeof(buf) - 1);
+        ssize_t n = read(client.fd, buf, sizeof(buf) - 1);
 
         if (n > 0) {
             buf[n] = '\0';
-            read_buffer += buf;
+            client.read_buffer += buf;
 
-            // process complete messages (newline-delimited)
-            // each message is one line of JSON
+            // process complete messages (newline-delimited JSON)
             size_t pos;
-            while ((pos = read_buffer.find('\n')) != std::string::npos) {
-                std::string message = read_buffer.substr(0, pos);
-                read_buffer.erase(0, pos + 1);
+            while ((pos = client.read_buffer.find('\n')) != std::string::npos) {
+                std::string message = client.read_buffer.substr(0, pos);
+                client.read_buffer.erase(0, pos + 1);
 
                 if (!message.empty()) {
-                    // call the handler and get the response
                     std::string response = on_message(message);
 
-                    // send response back (with newline delimiter)
+                    // send response back to this specific client
                     if (!response.empty()) {
                         response += '\n';
-                        // note: in production we'd handle partial writes
-                        // but for now we assume small messages fit in one write
-                        write(client_fd, response.c_str(), response.length());
+                        write(client.fd, response.c_str(), response.length());
                     }
                 }
             }
+            ++i;
         } else if (n == 0) {
             // client disconnected
-            close(client_fd);
-            client_fd = -1;
-            read_buffer.clear();
+            close(client.fd);
+            clients.erase(clients.begin() + i);
+            // don't increment i - next element shifted into this slot
+        } else {
+            // n == -1: EAGAIN/EWOULDBLOCK means no data, just move on
+            ++i;
         }
-        // n == -1 with EAGAIN/EWOULDBLOCK means no data available, which is fine
     }
 }
 
