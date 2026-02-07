@@ -190,6 +190,7 @@ type DebuggerStateResult struct {
 	Paused     bool `json:"paused"`
 	Active     bool `json:"active"`
 	Debuggable bool `json:"debuggable"`
+	IsPlaying  bool `json:"is_playing"`
 }
 
 // EvaluateResult from evaluate_expression (direct UDP to game)

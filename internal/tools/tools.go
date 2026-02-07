@@ -668,7 +668,8 @@ func makeGetDebuggerState(client *godot.Client) server.ToolHandlerFunc {
 			output = "Debugger: running\n"
 		}
 		output += fmt.Sprintf("Active: %v\n", result.Active)
-		output += fmt.Sprintf("Debuggable: %v", result.Debuggable)
+		output += fmt.Sprintf("Debuggable: %v\n", result.Debuggable)
+		output += fmt.Sprintf("Playing: %v", result.IsPlaying)
 
 		return mcp.NewToolResultText(output), nil
 	}

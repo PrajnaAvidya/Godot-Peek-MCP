@@ -309,6 +309,53 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 	}
 }
 
+// checkStartupErrors waits for the game to initialize, then checks if it
+// crashed on startup (runtime error or parser error). populates result fields
+// if an error is detected and auto-stops the crashed game.
+func (c *Client) checkStartupErrors(ctx context.Context, result *GenericResult, timeout float64) {
+	// skip check if timeout is shorter than our delay (game will auto-stop first)
+	if timeout > 0 && timeout < 1.5 {
+		return
+	}
+
+	time.Sleep(1500 * time.Millisecond)
+
+	state, err := c.GetDebuggerState(ctx)
+	if err != nil {
+		return // can't check, assume ok
+	}
+
+	// runtime error: debugger paused on error in _ready() or similar
+	if state.Paused {
+		trace, err := c.GetStackTrace(ctx)
+		if err == nil && trace.Length > 0 {
+			result.ErrorDetected = true
+			result.StackTrace = trace.StackTrace
+		} else {
+			result.ErrorDetected = true
+			result.StackTrace = "Game paused on error (no stack trace available)"
+		}
+		// stop the crashed game
+		c.StopScene(ctx)
+		return
+	}
+
+	// game didn't start: parser error or immediate crash
+	if !state.IsPlaying {
+		errors, err := c.GetDebugErrors(ctx)
+		if err == nil && errors.Length > 0 {
+			result.ErrorDetected = true
+			result.StackTrace = errors.Errors
+		} else {
+			result.ErrorDetected = true
+			result.StackTrace = "Game failed to start. Use get_output for details."
+		}
+		return
+	}
+
+	// game running normally
+}
+
 // RunMainScene starts the project's main scene
 func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout float64) (*GenericResult, error) {
 	// write overrides file before sending command
@@ -335,6 +382,8 @@ func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout 
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+
+	c.checkStartupErrors(ctx, &result, timeout)
 	return &result, nil
 }
 
@@ -365,6 +414,8 @@ func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overr
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+
+	c.checkStartupErrors(ctx, &result, timeout)
 	return &result, nil
 }
 
@@ -394,6 +445,8 @@ func (c *Client) RunCurrentScene(ctx context.Context, overrides Overrides, timeo
 			return nil, fmt.Errorf("unmarshal result: %w", err)
 		}
 	}
+
+	c.checkStartupErrors(ctx, &result, timeout)
 	return &result, nil
 }
 

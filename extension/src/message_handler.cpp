@@ -935,10 +935,18 @@ std::string MessageHandler::handle_get_debugger_state(int64_t id) {
         return make_error(id, -32000, "Debugger plugin not initialized");
     }
 
+    // include is_playing so Go client can detect if game failed to start
+    bool is_playing = false;
+    EditorInterface* editor = EditorInterface::get_singleton();
+    if (editor) {
+        is_playing = editor->is_playing_scene();
+    }
+
     json result = {
         {"paused", debugger_plugin->is_paused()},
         {"active", debugger_plugin->is_session_active()},
-        {"debuggable", debugger_plugin->is_debuggable()}
+        {"debuggable", debugger_plugin->is_debuggable()},
+        {"is_playing", is_playing}
     };
     return make_result(id, result.dump());
 }
