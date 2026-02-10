@@ -15,10 +15,54 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-      - run: go test ./...
+      - name: Go tests
+        run: go test -v -count=1 ./...
+      - name: C++ tests
+        working-directory: extension/tests
+        run: make test
+
+  build-extension:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            artifact: libgodot_mcp.linux.editor.x86_64.so
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            artifact: libgodot_mcp.macos.editor.arm64.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone godot-cpp
+        run: git clone --recurse-submodules --depth 1 --branch 10.0.0-rc1 https://github.com/godotengine/godot-cpp.git /tmp/godot-cpp
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install scons
+        run: pip install scons
+
+      - name: Build extension
+        working-directory: extension
+        env:
+          GODOT_CPP_PATH: /tmp/godot-cpp
+        run: scons platform=${{ matrix.platform }} target=editor arch=${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-${{ matrix.platform }}-${{ matrix.arch }}
+          path: addons/godot_mcp/bin/${{ matrix.artifact }}
 
   release:
-    needs: test
+    needs: [test, build-extension]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -29,23 +73,34 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Download extension artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble addon
+        run: |
+          # collect all platform binaries into addon
+          mkdir -p addons/godot_mcp/bin
+          cp artifacts/extension-linux-x86_64/*.so addons/godot_mcp/bin/
+          cp artifacts/extension-macos-arm64/*.dylib addons/godot_mcp/bin/
+
       - name: Build and package
         run: |
+          VERSION=${GITHUB_REF#refs/tags/}
           mkdir -p dist
 
-          GOOS=linux GOARCH=amd64 go build -o godot-peek-mcp ./cmd/godot-peek-mcp
+          # linux x86_64
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o godot-peek-mcp ./cmd/godot-peek-mcp
           chmod +x godot-peek-mcp
-          tar -czvf dist/godot-peek-mcp-linux-amd64.tar.gz godot-peek-mcp
+          tar -czvf "dist/godot-peek-mcp-${VERSION}-linux-x86_64.tar.gz" godot-peek-mcp addons/godot_mcp/
           rm godot-peek-mcp
 
-          GOOS=darwin GOARCH=arm64 go build -o godot-peek-mcp ./cmd/godot-peek-mcp
+          # macos arm64
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o godot-peek-mcp ./cmd/godot-peek-mcp
           chmod +x godot-peek-mcp
-          tar -czvf dist/godot-peek-mcp-darwin-arm64.tar.gz godot-peek-mcp
+          tar -czvf "dist/godot-peek-mcp-${VERSION}-macos-arm64.tar.gz" godot-peek-mcp addons/godot_mcp/
           rm godot-peek-mcp
-
-          GOOS=windows GOARCH=amd64 go build -o godot-peek-mcp.exe ./cmd/godot-peek-mcp
-          zip dist/godot-peek-mcp-windows-amd64.zip godot-peek-mcp.exe
-          rm godot-peek-mcp.exe
 
       - name: Create release
         uses: softprops/action-gh-release@v2

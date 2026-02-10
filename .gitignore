@@ -4,3 +4,8 @@
 godot-peek-mcp
 *.exe
 *.uid
+
+# c++ extension build artifacts
+extension/src/*.os
+extension/.sconsign.dblite
+addons/godot_mcp/bin/

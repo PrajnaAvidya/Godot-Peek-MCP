@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+
+import os
+
+# path to godot-cpp (override with GODOT_CPP_PATH env var for CI)
+godot_cpp_path = os.environ.get("GODOT_CPP_PATH", os.path.expanduser("~/Code/godot-cpp"))
+
+# import the godot-cpp build environment
+env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
+
+# add our source and deps directories to include path
+# deps/ contains nlohmann/json.hpp for JSON parsing
+env.Append(CPPPATH=["src/", "deps/"])
+
+# gather all cpp files
+sources = Glob("src/*.cpp")
+
+# build shared library, output to addons folder
+library = env.SharedLibrary(
+    "../addons/godot_mcp/bin/libgodot_mcp{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=sources,
+)
+
+Default(library)
