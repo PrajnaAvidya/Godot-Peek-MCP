@@ -1,5 +1,7 @@
 #pragma once
 
+#include "json_rpc.h"
+
 #include <string>
 #include <functional>
 #include <vector>
@@ -59,12 +61,6 @@ private:
     std::string handle_get_screenshot(int64_t id, const std::string& params_str);
     std::string capture_editor(int64_t id);
     std::string capture_game(int64_t id);
-
-    // helper to build error response
-    std::string make_error(int64_t id, int code, const std::string& message);
-
-    // helper to build success response
-    std::string make_result(int64_t id, const std::string& result_json);
 
     // extract timeout and trigger callback
     void schedule_auto_stop(const std::string& params_str);

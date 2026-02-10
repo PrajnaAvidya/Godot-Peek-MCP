@@ -187,30 +187,7 @@ void MessageHandler::schedule_auto_stop(const std::string& params_str) {
     on_scene_launch(timeout);
 }
 
-std::string MessageHandler::make_error(int64_t id, int code, const std::string& message) {
-    json response = {
-        {"id", id},
-        {"error", {
-            {"code", code},
-            {"message", message}
-        }}
-    };
-    return response.dump();
-}
-
-std::string MessageHandler::make_result(int64_t id, const std::string& result_json) {
-    // parse the result JSON and wrap it in the response structure
-    json result = json::parse(result_json, nullptr, false);
-    if (result.is_discarded()) {
-        result = json::object();
-    }
-
-    json response = {
-        {"id", id},
-        {"result", result}
-    };
-    return response.dump();
-}
+// make_error and make_result are now free functions in json_rpc.h/cpp
 
 std::string MessageHandler::handle_get_output(int64_t id, const std::string& params_str) {
     if (!control_finder) {
@@ -705,31 +682,7 @@ std::string MessageHandler::handle_get_remote_scene_tree(int64_t id) {
     return make_result(id, result.dump());
 }
 
-// helper: split node path into parts (e.g., "/root/Main/Player" -> ["root", "Main", "Player"])
-static std::vector<std::string> split_node_path(const std::string& path) {
-    std::vector<std::string> parts;
-    std::string clean = path;
-
-    // trim leading slash
-    if (!clean.empty() && clean[0] == '/') {
-        clean = clean.substr(1);
-    }
-
-    // split by /
-    size_t start = 0;
-    size_t pos;
-    while ((pos = clean.find('/', start)) != std::string::npos) {
-        if (pos > start) {
-            parts.push_back(clean.substr(start, pos - start));
-        }
-        start = pos + 1;
-    }
-    if (start < clean.length()) {
-        parts.push_back(clean.substr(start));
-    }
-
-    return parts;
-}
+// split_node_path is now a free function in json_rpc.h/cpp
 
 TreeItem* MessageHandler::find_tree_item_by_path(TreeItem* root, const std::vector<std::string>& path_parts) {
     if (path_parts.empty()) {
