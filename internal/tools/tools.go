@@ -219,39 +219,6 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		),
 		makeEvaluateExpression(client),
 	)
-
-	// send_input - inject input events into running game
-	s.AddTool(
-		mcp.NewTool("send_input",
-			mcp.WithDescription("Send fake input events to the running game. Useful for automated testing. Requires game to be running with peek_runtime_helper autoload."),
-			mcp.WithString("type",
-				mcp.Required(),
-				mcp.Description("Input type: 'action', 'key', 'mouse_button', or 'mouse_motion'"),
-			),
-			mcp.WithString("action",
-				mcp.Description("Action name for type='action' (e.g., 'jump', 'fire', 'ui_accept')"),
-			),
-			mcp.WithString("keycode",
-				mcp.Description("Key code for type='key' (e.g., 'W', 'SPACE', 'ESCAPE')"),
-			),
-			mcp.WithString("button",
-				mcp.Description("Mouse button for type='mouse_button': 'left', 'right', 'middle', 'wheel_up', 'wheel_down'"),
-			),
-			mcp.WithBoolean("pressed",
-				mcp.Description("Whether key/button is pressed (default: true)"),
-			),
-			mcp.WithNumber("strength",
-				mcp.Description("Analog strength 0.0-1.0 for actions (default: 1.0)"),
-			),
-			mcp.WithArray("position",
-				mcp.Description("Mouse position [x, y] for mouse events"),
-			),
-			mcp.WithArray("relative",
-				mcp.Description("Relative motion [x, y] for mouse_motion"),
-			),
-		),
-		makeSendInput(client),
-	)
 }
 
 // getTimeoutArg extracts the optional timeout_seconds arg from request
@@ -754,54 +721,3 @@ func makeEvaluateExpression(client *godot.Client) server.ToolHandlerFunc {
 	}
 }
 
-func makeSendInput(client *godot.Client) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// note: doesn't require C++ connection, talks directly to game via UDP
-		inputType, err := req.RequireString("type")
-		if err != nil {
-			return mcp.NewToolResultError("missing required parameter: type"), nil
-		}
-
-		// validate input type
-		validTypes := map[string]bool{"action": true, "key": true, "mouse_button": true, "mouse_motion": true}
-		if !validTypes[inputType] {
-			return mcp.NewToolResultError("type must be 'action', 'key', 'mouse_button', or 'mouse_motion'"), nil
-		}
-
-		// build params map from request arguments
-		params := make(map[string]interface{})
-		args := req.GetArguments()
-		if args != nil {
-			if v, ok := args["action"].(string); ok {
-				params["action"] = v
-			}
-			if v, ok := args["keycode"].(string); ok {
-				params["keycode"] = v
-			}
-			if v, ok := args["button"].(string); ok {
-				params["button"] = v
-			}
-			if v, ok := args["pressed"].(bool); ok {
-				params["pressed"] = v
-			} else {
-				params["pressed"] = true // default
-			}
-			if v, ok := args["strength"].(float64); ok {
-				params["strength"] = v
-			}
-			if v, ok := args["position"].([]interface{}); ok {
-				params["position"] = v
-			}
-			if v, ok := args["relative"].([]interface{}); ok {
-				params["relative"] = v
-			}
-		}
-
-		result, err := client.SendInput(ctx, inputType, params)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to send input: %v", err)), nil
-		}
-
-		return mcp.NewToolResultText(fmt.Sprintf("Input sent: %s", result.Type)), nil
-	}
-}

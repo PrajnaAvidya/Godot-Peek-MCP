@@ -200,9 +200,3 @@ type EvaluateResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// InputResult from send_input (direct UDP to game)
-type InputResult struct {
-	Success bool   `json:"success"`
-	Type    string `json:"type"`
-	Error   string `json:"error,omitempty"`
-}

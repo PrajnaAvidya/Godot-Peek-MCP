@@ -884,30 +884,3 @@ func (c *Client) GetGameScreenshot(ctx context.Context) (*ScreenshotResult, erro
 	return &result, nil
 }
 
-// SendInput injects input events into the running game (direct UDP)
-func (c *Client) SendInput(ctx context.Context, inputType string, params map[string]interface{}) (*InputResult, error) {
-	request := map[string]interface{}{
-		"cmd":  "input",
-		"type": inputType,
-	}
-	// merge additional params
-	for k, v := range params {
-		request[k] = v
-	}
-
-	respData, err := sendGameUDP(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("udp request failed: %w", err)
-	}
-
-	var result InputResult
-	if err := json.Unmarshal(respData, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	if result.Error != "" {
-		return nil, fmt.Errorf("input error: %s", result.Error)
-	}
-
-	return &result, nil
-}

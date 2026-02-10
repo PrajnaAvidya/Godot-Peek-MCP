@@ -110,18 +110,6 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 
 Use this to query game state, set variables, or call methods without adding debug code.
 
-### Input Injection
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `send_input` | Inject fake input events | `type`, `action`/`keycode`/`button`, `pressed`, etc. |
-
-Input types:
-- `action`: Trigger Input Map actions (e.g., "jump", "fire")
-- `key`: Raw key presses (e.g., "W", "SPACE")
-- `mouse_button`: Mouse clicks at position
-- `mouse_motion`: Mouse movement
-
 Useful for automated testing and UI interaction.
 
 ## Architecture
@@ -182,8 +170,6 @@ Paths are currently hardcoded in the source.
 **Screenshots for visual bugs**: `get_screenshot target=game` shows exactly what the player sees.
 
 **Evaluate expressions**: Query any game state without print statements. `evaluate_expression "get_tree().current_scene.name"` or modify state: `evaluate_expression "get_node('/root/Main/Player').set('health', 100)"` (use `.set()` - assignment operators don't work in Expression class). **Note:** If the expression triggers a runtime error, the tool call will timeout - this is expected since the game crashes before it can respond.
-
-**Input injection**: Send fake input events for automated testing. `send_input type=action action=jump` or `send_input type=key keycode=SPACE pressed=true`.
 
 ## Requirements
 
