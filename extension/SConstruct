@@ -2,8 +2,8 @@
 
 import os
 
-# path to godot-cpp
-godot_cpp_path = os.path.expanduser("~/Code/godot-cpp")
+# path to godot-cpp (override with GODOT_CPP_PATH env var for CI)
+godot_cpp_path = os.environ.get("GODOT_CPP_PATH", os.path.expanduser("~/Code/godot-cpp"))
 
 # import the godot-cpp build environment
 env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
