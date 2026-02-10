@@ -1,7 +1,7 @@
 .idea/
 
 # go build output
-godot-peek-mcp
+/godot-peek-mcp
 *.exe
 *.uid
 
