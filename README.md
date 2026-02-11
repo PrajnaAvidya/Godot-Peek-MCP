@@ -187,6 +187,14 @@ Use this to query game state, set variables, or call methods without adding debu
 
 **Evaluate expressions**: Query any game state without print statements. `evaluate_expression "get_tree().current_scene.name"` or modify state: `evaluate_expression "get_node('/root/Main/Player').set('health', 100)"` (use `.set()` — assignment operators don't work in Expression class). **Note:** If the expression triggers a runtime error, the tool call will timeout since the game crashes before it can respond.
 
+## Exporting Your Game
+
+The MCP plugin is editor-only. To export your game, exclude the extension files or the built game will error on startup:
+
+**Export > Resources > Filters to exclude**: add `addons/godot_mcp/bin/*, addons/godot_mcp/godot_peek.gdextension, addons/godot_mcp/plugin.*`
+
+The runtime helper script (`peek_runtime_helper.gd`) stays included since it's registered as an autoload, but it automatically skips initialization in export builds.
+
 ## Notes
 
 **Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.

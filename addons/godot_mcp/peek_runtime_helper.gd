@@ -16,6 +16,9 @@ var udp_server: UDPServer
 
 
 func _ready() -> void:
+	# skip in export builds — no mcp server to talk to
+	if not OS.has_feature("editor"):
+		return
 	_apply_overrides()
 	_start_screenshot_server()
 
