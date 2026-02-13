@@ -111,6 +111,11 @@ std::string MessageHandler::handle_run_main_scene(int64_t id, const std::string&
         return make_error(id, -32000, "EditorInterface not available");
     }
 
+    // fail if a scene is already running (user may have closed it, godot tracks that)
+    if (editor->is_playing_scene()) {
+        return make_error(id, -32000, "A scene is already running. Stop it first with stop_scene.");
+    }
+
     editor->play_main_scene();
     schedule_auto_stop(params_str);
 
@@ -134,6 +139,11 @@ std::string MessageHandler::handle_run_scene(int64_t id, const std::string& para
         return make_error(id, -32000, "EditorInterface not available");
     }
 
+    // fail if a scene is already running
+    if (editor->is_playing_scene()) {
+        return make_error(id, -32000, "A scene is already running. Stop it first with stop_scene.");
+    }
+
     editor->play_custom_scene(String(scene_path.c_str()));
     schedule_auto_stop(params_str);
 
@@ -150,6 +160,11 @@ std::string MessageHandler::handle_run_current_scene(int64_t id, const std::stri
     EditorInterface* editor = EditorInterface::get_singleton();
     if (!editor) {
         return make_error(id, -32000, "EditorInterface not available");
+    }
+
+    // fail if a scene is already running
+    if (editor->is_playing_scene()) {
+        return make_error(id, -32000, "A scene is already running. Stop it first with stop_scene.");
     }
 
     editor->play_current_scene();
