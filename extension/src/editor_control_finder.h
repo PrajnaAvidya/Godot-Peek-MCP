@@ -5,7 +5,43 @@
 #include <godot_cpp/classes/rich_text_label.hpp>
 #include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/tree.hpp>
+#include <godot_cpp/core/object.hpp>  // ObjectDB
 #include <vector>
+
+// cached reference to a godot object that validates the pointer is still alive.
+// raw pointers to editor UI controls can become stale when godot reconstructs
+// controls (eg debugger panels during game start/stop). this wrapper checks
+// ObjectDB before returning the pointer, returning nullptr if the object was freed.
+template<typename T>
+struct CachedRef {
+    T* ptr = nullptr;
+    uint64_t id = 0;
+
+    // return cached pointer if still alive, nullptr if freed
+    T* get() {
+        if (!ptr) {
+            return nullptr;
+        }
+        if (godot::ObjectDB::get_instance(id) == nullptr) {
+            // object was freed, clear stale reference
+            ptr = nullptr;
+            id = 0;
+            return nullptr;
+        }
+        return ptr;
+    }
+
+    // store a new reference
+    void set(T* p) {
+        ptr = p;
+        id = p ? p->get_instance_id() : 0;
+    }
+
+    void clear() {
+        ptr = nullptr;
+        id = 0;
+    }
+};
 
 // helper class to find and cache editor UI controls
 // traverses EditorInterface::get_base_control() to locate specific controls
@@ -51,13 +87,13 @@ private:
         const char* class_name
     );
 
-    // cached references (raw pointers - we don't own these nodes)
-    godot::RichTextLabel* output_panel = nullptr;
-    godot::Tree* errors_tree = nullptr;
-    godot::Tree* monitors_tree = nullptr;
-    godot::RichTextLabel* stack_trace_label = nullptr;
-    godot::Label* stack_trace_label_44 = nullptr;
-    godot::Tree* stack_frames_tree = nullptr;
-    godot::Control* debugger_inspector = nullptr;
-    godot::Control* main_inspector = nullptr;
+    // cached references with lifetime validation via ObjectDB
+    CachedRef<godot::RichTextLabel> output_panel;
+    CachedRef<godot::Tree> errors_tree;
+    CachedRef<godot::Tree> monitors_tree;
+    CachedRef<godot::RichTextLabel> stack_trace_label;
+    CachedRef<godot::Label> stack_trace_label_44;
+    CachedRef<godot::Tree> stack_frames_tree;
+    CachedRef<godot::Control> debugger_inspector;
+    CachedRef<godot::Control> main_inspector;
 };

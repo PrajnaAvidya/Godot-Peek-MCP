@@ -37,4 +37,5 @@ private:
     int server_fd = -1;                    // listening socket file descriptor
     std::string socket_path;               // path to the socket file
     std::vector<ClientConnection> clients; // all connected clients
+    bool owns_socket = false;              // true if we created the socket file
 };

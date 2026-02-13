@@ -45,6 +45,9 @@ private:
     // auto-stop timer state
     double auto_stop_timeout = 0.0;   // seconds remaining, 0 = disabled
     bool auto_stop_active = false;
+
+    // diagnostic: track time since last heartbeat log
+    double heartbeat_timer = 0.0;
 };
 
 }

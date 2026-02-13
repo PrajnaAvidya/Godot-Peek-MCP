@@ -10,9 +10,10 @@
 using namespace godot;
 
 RichTextLabel* EditorControlFinder::get_output_panel() {
-    // return cached if available
-    if (output_panel) {
-        return output_panel;
+    // return cached if still alive (CachedRef checks ObjectDB)
+    RichTextLabel* cached = output_panel.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -35,19 +36,19 @@ RichTextLabel* EditorControlFinder::get_output_panel() {
         String path = node->get_path();
         if (path.contains("EditorLog") ||
             (path.contains("EditorBottomPanel") && path.contains("/Output/"))) {
-            output_panel = Object::cast_to<RichTextLabel>(node);
+            output_panel.set(Object::cast_to<RichTextLabel>(node));
             UtilityFunctions::print("EditorControlFinder: found output panel at ", path);
             break;
         }
     }
 
-    return output_panel;
+    return output_panel.get();
 }
 
 Tree* EditorControlFinder::get_errors_tree() {
-    // return cached if available
-    if (errors_tree) {
-        return errors_tree;
+    Tree* cached = errors_tree.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -74,18 +75,19 @@ Tree* EditorControlFinder::get_errors_tree() {
         bool is_errors = path.contains("/Errors");
 
         if (is_debugger && is_errors) {
-            errors_tree = Object::cast_to<Tree>(node);
+            errors_tree.set(Object::cast_to<Tree>(node));
             UtilityFunctions::print("EditorControlFinder: found errors tree at ", path);
             break;
         }
     }
 
-    return errors_tree;
+    return errors_tree.get();
 }
 
 Tree* EditorControlFinder::get_monitors_tree() {
-    if (monitors_tree) {
-        return monitors_tree;
+    Tree* cached = monitors_tree.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -108,18 +110,19 @@ Tree* EditorControlFinder::get_monitors_tree() {
         bool is_monitors = path.contains("/Monitors");
 
         if (is_debugger && is_monitors) {
-            monitors_tree = Object::cast_to<Tree>(node);
+            monitors_tree.set(Object::cast_to<Tree>(node));
             UtilityFunctions::print("EditorControlFinder: found monitors tree at ", path);
             break;
         }
     }
 
-    return monitors_tree;
+    return monitors_tree.get();
 }
 
 RichTextLabel* EditorControlFinder::get_stack_trace_label() {
-    if (stack_trace_label) {
-        return stack_trace_label;
+    RichTextLabel* cached = stack_trace_label.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -138,18 +141,19 @@ RichTextLabel* EditorControlFinder::get_stack_trace_label() {
     for (Node* node : labels) {
         String path = node->get_path();
         if (path.contains("/Stack Trace/")) {
-            stack_trace_label = Object::cast_to<RichTextLabel>(node);
+            stack_trace_label.set(Object::cast_to<RichTextLabel>(node));
             UtilityFunctions::print("EditorControlFinder: found stack trace label at ", path);
             break;
         }
     }
 
-    return stack_trace_label;
+    return stack_trace_label.get();
 }
 
 Label* EditorControlFinder::get_stack_trace_label_44() {
-    if (stack_trace_label_44) {
-        return stack_trace_label_44;
+    Label* cached = stack_trace_label_44.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -168,18 +172,19 @@ Label* EditorControlFinder::get_stack_trace_label_44() {
     for (Node* node : labels) {
         String path = node->get_path();
         if (path.contains("/Stack Trace/") && path.contains("@HBoxContainer")) {
-            stack_trace_label_44 = Object::cast_to<Label>(node);
+            stack_trace_label_44.set(Object::cast_to<Label>(node));
             UtilityFunctions::print("EditorControlFinder: found stack trace label (4.4) at ", path);
             break;
         }
     }
 
-    return stack_trace_label_44;
+    return stack_trace_label_44.get();
 }
 
 Tree* EditorControlFinder::get_stack_frames_tree() {
-    if (stack_frames_tree) {
-        return stack_frames_tree;
+    Tree* cached = stack_frames_tree.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -198,18 +203,19 @@ Tree* EditorControlFinder::get_stack_frames_tree() {
     for (Node* node : trees) {
         String path = node->get_path();
         if (path.contains("/Stack Trace/")) {
-            stack_frames_tree = Object::cast_to<Tree>(node);
+            stack_frames_tree.set(Object::cast_to<Tree>(node));
             UtilityFunctions::print("EditorControlFinder: found stack frames tree at ", path);
             break;
         }
     }
 
-    return stack_frames_tree;
+    return stack_frames_tree.get();
 }
 
 Control* EditorControlFinder::get_debugger_inspector() {
-    if (debugger_inspector) {
-        return debugger_inspector;
+    Control* cached = debugger_inspector.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -226,16 +232,17 @@ Control* EditorControlFinder::get_debugger_inspector() {
     // this control displays local variables when debugger is paused
     auto nodes = find_all_by_class(base, "EditorDebuggerInspector");
     if (!nodes.empty()) {
-        debugger_inspector = Object::cast_to<Control>(nodes[0]);
+        debugger_inspector.set(Object::cast_to<Control>(nodes[0]));
         UtilityFunctions::print("EditorControlFinder: found debugger inspector at ", nodes[0]->get_path());
     }
 
-    return debugger_inspector;
+    return debugger_inspector.get();
 }
 
 Control* EditorControlFinder::get_main_inspector() {
-    if (main_inspector) {
-        return main_inspector;
+    Control* cached = main_inspector.get();
+    if (cached) {
+        return cached;
     }
 
     EditorInterface* editor = EditorInterface::get_singleton();
@@ -256,13 +263,13 @@ Control* EditorControlFinder::get_main_inspector() {
         // main inspector is in the right dock slot
         if (path.contains("DockSlotRightUL/Inspector/") ||
             path.contains("DockSlotRightBL/Inspector/")) {
-            main_inspector = Object::cast_to<Control>(node);
+            main_inspector.set(Object::cast_to<Control>(node));
             UtilityFunctions::print("EditorControlFinder: found main inspector at ", path);
             break;
         }
     }
 
-    return main_inspector;
+    return main_inspector.get();
 }
 
 Tree* EditorControlFinder::get_remote_scene_tree(bool click_remote_button) {
@@ -311,14 +318,14 @@ Tree* EditorControlFinder::get_remote_scene_tree(bool click_remote_button) {
 }
 
 void EditorControlFinder::invalidate_cache() {
-    output_panel = nullptr;
-    errors_tree = nullptr;
-    monitors_tree = nullptr;
-    stack_trace_label = nullptr;
-    stack_trace_label_44 = nullptr;
-    stack_frames_tree = nullptr;
-    debugger_inspector = nullptr;
-    main_inspector = nullptr;
+    output_panel.clear();
+    errors_tree.clear();
+    monitors_tree.clear();
+    stack_trace_label.clear();
+    stack_trace_label_44.clear();
+    stack_frames_tree.clear();
+    debugger_inspector.clear();
+    main_inspector.clear();
     // note: don't reset last_output_length - that tracks user's read position
 }
 

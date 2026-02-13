@@ -1,11 +1,39 @@
 #include "socket_server.h"
 
-#include <sys/socket.h>  // socket(), bind(), listen(), accept()
+#include <sys/socket.h>  // socket(), bind(), listen(), accept(), send()
 #include <sys/un.h>      // sockaddr_un - unix domain socket address structure
-#include <unistd.h>      // close(), unlink(), read(), write()
-#include <fcntl.h>       // fcntl() - for setting non-blocking mode
+#include <unistd.h>      // close(), unlink(), read()
+#include <fcntl.h>       // fcntl() - for setting non-blocking and close-on-exec
 #include <errno.h>       // errno, EAGAIN, EWOULDBLOCK
 #include <cstring>       // memset, strlen
+
+// platform-specific flags for preventing fd inheritance and SIGPIPE:
+// linux: SOCK_CLOEXEC, accept4(), MSG_NOSIGNAL
+// macOS: fcntl(FD_CLOEXEC), accept(), SO_NOSIGPIPE
+#ifdef __linux__
+    // MSG_NOSIGNAL prevents SIGPIPE on send() to broken pipes
+    static constexpr int SEND_FLAGS = MSG_NOSIGNAL;
+#else
+    static constexpr int SEND_FLAGS = 0;
+#endif
+
+// helper: set close-on-exec flag so game child process doesn't inherit this fd.
+// on linux with SOCK_CLOEXEC/accept4 this is redundant but harmless as a safety net.
+static void set_cloexec(int fd) {
+    int flags = fcntl(fd, F_GETFD, 0);
+    if (flags >= 0) {
+        fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+    }
+}
+
+#ifdef __APPLE__
+// helper: set SO_NOSIGPIPE so send() doesn't raise SIGPIPE on macOS.
+// linux uses MSG_NOSIGNAL per-send instead.
+static void set_nosigpipe(int fd) {
+    int optval = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
+}
+#endif
 
 SocketServer::SocketServer() = default;
 
@@ -13,20 +41,53 @@ SocketServer::~SocketServer() {
     stop();
 }
 
+// helper: check if an existing socket has a live listener by attempting to connect.
+// returns true if another process is actively listening on this path.
+static bool is_socket_alive(const std::string& path) {
+    int probe = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (probe < 0) {
+        return false;
+    }
+
+    sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+
+    // try to connect - if it succeeds, someone is listening
+    bool alive = (connect(probe, (sockaddr*)&addr, sizeof(addr)) == 0);
+    close(probe);
+    return alive;
+}
+
 bool SocketServer::start(const std::string& path) {
     socket_path = path;
+
+    // check if another process already owns this socket (eg editor process
+    // when we're in a game child process). if so, don't touch it.
+    if (access(path.c_str(), F_OK) == 0 && is_socket_alive(path)) {
+        // another instance is listening - don't steal its socket
+        return false;
+    }
 
     // create the socket
     // AF_UNIX = unix domain socket (local IPC, not network)
     // SOCK_STREAM = reliable, ordered, connection-based (like TCP)
-    // 0 = default protocol for this socket type
+#ifdef __linux__
+    // SOCK_CLOEXEC prevents game child process from inheriting this fd
+    server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#else
     server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+#endif
     if (server_fd < 0) {
         return false;
     }
 
-    // remove any existing socket file from a previous run
-    // if we don't do this, bind() will fail with "address already in use"
+    // ensure close-on-exec is set (redundant on linux, required on macOS)
+    set_cloexec(server_fd);
+
+    // remove stale socket file from a previous crashed run.
+    // safe because we already verified no live listener above.
     unlink(socket_path.c_str());
 
     // set up the address structure
@@ -60,6 +121,7 @@ bool SocketServer::start(const std::string& path) {
     int flags = fcntl(server_fd, F_GETFL, 0);
     fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
 
+    owns_socket = true;
     return true;
 }
 
@@ -75,10 +137,13 @@ void SocketServer::stop() {
         close(server_fd);
         server_fd = -1;
     }
-    if (!socket_path.empty()) {
+    // only delete the socket file if we created it.
+    // prevents game child processes from deleting the editor's socket.
+    if (owns_socket && !socket_path.empty()) {
         unlink(socket_path.c_str());
-        socket_path.clear();
+        owns_socket = false;
     }
+    socket_path.clear();
 }
 
 void SocketServer::poll(MessageCallback on_message) {
@@ -88,13 +153,24 @@ void SocketServer::poll(MessageCallback on_message) {
 
     // accept all pending connections (drain the backlog)
     while (true) {
+#ifdef __linux__
+        // accept4 with SOCK_CLOEXEC atomically sets close-on-exec
+        int new_fd = accept4(server_fd, nullptr, nullptr, SOCK_CLOEXEC);
+#else
         int new_fd = accept(server_fd, nullptr, nullptr);
+#endif
         if (new_fd < 0) {
             break;  // no more pending connections (EAGAIN/EWOULDBLOCK)
         }
         // set client socket to non-blocking
         int flags = fcntl(new_fd, F_GETFL, 0);
         fcntl(new_fd, F_SETFL, flags | O_NONBLOCK);
+        // prevent fd inheritance by game child process
+        set_cloexec(new_fd);
+#ifdef __APPLE__
+        // on macOS, prevent SIGPIPE per-socket (linux uses MSG_NOSIGNAL per-send)
+        set_nosigpipe(new_fd);
+#endif
         clients.push_back({new_fd, ""});
     }
 
@@ -110,6 +186,8 @@ void SocketServer::poll(MessageCallback on_message) {
             client.read_buffer += buf;
 
             // process complete messages (newline-delimited JSON)
+            // track whether this client died during processing
+            bool client_dead = false;
             size_t pos;
             while ((pos = client.read_buffer.find('\n')) != std::string::npos) {
                 std::string message = client.read_buffer.substr(0, pos);
@@ -119,21 +197,40 @@ void SocketServer::poll(MessageCallback on_message) {
                     std::string response = on_message(message);
 
                     // send response back to this specific client
+                    // uses send() instead of write() so we can pass MSG_NOSIGNAL
+                    // on linux to prevent SIGPIPE if client disconnected between
+                    // sending its request and receiving our response
                     if (!response.empty()) {
                         response += '\n';
-                        write(client.fd, response.c_str(), response.length());
+                        ssize_t written = send(client.fd, response.c_str(), response.length(), SEND_FLAGS);
+                        if (written < 0) {
+                            // write failed (EPIPE, ECONNRESET, etc) - client is dead
+                            client_dead = true;
+                            break;
+                        }
                     }
                 }
             }
-            ++i;
+            if (client_dead) {
+                close(client.fd);
+                clients.erase(clients.begin() + i);
+            } else {
+                ++i;
+            }
         } else if (n == 0) {
-            // client disconnected
+            // clean disconnect
             close(client.fd);
             clients.erase(clients.begin() + i);
-            // don't increment i - next element shifted into this slot
         } else {
-            // n == -1: EAGAIN/EWOULDBLOCK means no data, just move on
-            ++i;
+            // n == -1: check if it's a transient error or a fatal one
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // no data available right now, try again next frame
+                ++i;
+            } else {
+                // fatal error (ECONNRESET, EBADF, etc) - remove dead client
+                close(client.fd);
+                clients.erase(clients.begin() + i);
+            }
         }
     }
 }
