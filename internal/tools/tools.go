@@ -211,10 +211,10 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// evaluate_expression - evaluate GDScript in running game
 	s.AddTool(
 		mcp.NewTool("evaluate_expression",
-			mcp.WithDescription("Evaluate a GDScript expression in the running game. Can access scene tree, call methods, get/set properties. Requires game to be running with peek_runtime_helper autoload. Note: use .set('prop', value) to modify properties - assignment operators don't work in Expression class. WARNING: If expression triggers a runtime error, this tool will timeout (game crashes before responding) - this is expected."),
+			mcp.WithDescription("Evaluate GDScript code in the running game. Supports full GDScript: variables, multi-line, return statements. Single-line expressions auto-return their value. Multi-line code must use explicit 'return' to get a value back. The code runs as a function body on a Node added to the scene root, so get_node(), get_tree() etc work. Requires game running with peek_runtime_helper autoload. WARNING: If expression triggers a runtime error, this tool may timeout (game crashes before responding)."),
 			mcp.WithString("expression",
 				mcp.Required(),
-				mcp.Description("GDScript expression to evaluate, e.g. 'get_node(\"/root/Main/Player\").health' or 'get_node(\"/root/Main\").set(\"speed\", 10)'"),
+				mcp.Description("GDScript code to evaluate. Single line: 'get_node(\"/root/Main/Player\").health'. Multi-line with var: 'var node = get_node(\"/root/Main\")\\nreturn node.name'. Use \\n for line breaks."),
 			),
 		),
 		makeEvaluateExpression(client),

@@ -143,19 +143,38 @@ func _evaluate_expression(peer: PacketPeerUDP, expr_str: String) -> void:
 		_send_error(peer, "empty expression")
 		return
 
-	var expression := Expression.new()
-	var parse_err := expression.parse(expr_str)
-	if parse_err != OK:
-		_send_error(peer, "parse error: %s" % expression.get_error_text())
+	# use dynamic GDScript compilation instead of Expression class.
+	# Expression only supports simple math/property expressions — no var, return,
+	# multi-line, or any GDScript keywords. dynamic compilation supports full GDScript.
+
+	# for single-line expressions without statements, auto-prepend return
+	# so simple expressions like `get_node("/root/X").health` just work
+	var lines := expr_str.split("\n")
+	var first_trimmed := lines[0].strip_edges()
+	if lines.size() == 1 and not first_trimmed.begins_with("var ") and not first_trimmed.begins_with("return"):
+		expr_str = "return " + expr_str
+
+	# indent each line as function body
+	var body := ""
+	for line in expr_str.split("\n"):
+		body += "\t" + line + "\n"
+
+	var source := "extends Node\n\nfunc _eval():\n" + body
+
+	var script := GDScript.new()
+	script.source_code = source
+	var err := script.reload()
+	if err != OK:
+		_send_error(peer, "compile error: check expression syntax")
 		return
 
-	# use scene root as base so expressions can call get_node(), get_tree(), etc.
-	var base := get_tree().root
-	var result: Variant = expression.execute([], base)
+	# instantiate and add to scene tree so get_node/get_tree work
+	var obj: Node = script.new()
+	get_tree().root.add_child(obj)
 
-	if expression.has_execute_failed():
-		_send_error(peer, "execution failed")
-		return
+	var result: Variant = obj._eval()
+
+	obj.queue_free()
 
 	var response := {
 		"value": _variant_to_string(result),
