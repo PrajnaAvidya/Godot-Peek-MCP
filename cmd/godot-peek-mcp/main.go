@@ -6,8 +6,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
@@ -18,6 +21,20 @@ const (
 	serverName    = "godot-peek-mcp"
 	serverVersion = "0.1.0"
 )
+
+// sanitizeProjectName matches the C++ plugin's sanitization logic:
+// lowercase, replace non-alphanumeric with dash, trim trailing dashes.
+func sanitizeProjectName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToLower(r))
+		} else if b.Len() > 0 && !strings.HasSuffix(b.String(), "-") {
+			b.WriteRune('-')
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
+}
 
 func main() {
 	// all logging goes to stderr (stdout is reserved for MCP protocol)
@@ -34,9 +51,19 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	// connect to Godot editor via Unix socket
-	// socket path can be overridden via GODOT_PEEK_SOCKET env var
+	// socket path resolution:
+	// 1. GODOT_PEEK_SOCKET env var (explicit full path override)
+	// 2. derive from cwd directory name (matches C++ plugin logic)
 	socketPath := os.Getenv("GODOT_PEEK_SOCKET")
+	if socketPath == "" {
+		dir, err := os.Getwd()
+		if err == nil {
+			sanitized := sanitizeProjectName(filepath.Base(dir))
+			if sanitized != "" {
+				socketPath = "/tmp/godot-peek-" + sanitized + ".sock"
+			}
+		}
+	}
 	if socketPath == "" {
 		socketPath = godot.DefaultSocketPath
 	}
@@ -84,17 +111,6 @@ func connectWithRetry(ctx context.Context, client *godot.Client, maxRetries int)
 		}
 		lastErr = err
 		log.Printf("connection attempt failed: %v", err)
-
-		// diagnostic: check socket file state
-		socketPath := os.Getenv("GODOT_PEEK_SOCKET")
-		if socketPath == "" {
-			socketPath = godot.DefaultSocketPath
-		}
-		if info, statErr := os.Stat(socketPath); statErr != nil {
-			log.Printf("diagnostic: socket file %s does NOT exist: %v", socketPath, statErr)
-		} else {
-			log.Printf("diagnostic: socket file %s exists, mode=%s, size=%d", socketPath, info.Mode(), info.Size())
-		}
 	}
 
 	return lastErr

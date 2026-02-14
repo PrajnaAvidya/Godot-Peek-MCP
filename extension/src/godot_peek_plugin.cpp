@@ -7,28 +7,57 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
-#include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 
-#include <cstdio>   // fopen, fprintf
-#include <ctime>    // time, localtime, strftime
-#include <unistd.h> // access, getpid
+#include <string>
 
 using namespace godot;
 
-// socket path - hardcoded for now, could make configurable later
-static const char* SOCKET_PATH = "/tmp/godot-peek.sock";
-static const char* DEBUG_LOG = "/tmp/godot-peek-debug.log";
+// derive a project-specific socket path from the godot project directory name.
+// eg project at /home/user/Code/my-game -> /tmp/godot-peek-my-game.sock
+// sanitizes to lowercase alphanumeric + dash to avoid path issues.
+static std::string get_project_socket_path() {
+    ProjectSettings* ps = ProjectSettings::get_singleton();
+    if (!ps) {
+        return "/tmp/godot-peek.sock";
+    }
 
-// append a timestamped line to the debug log
-static void debug_log(const char* msg) {
-    FILE* f = fopen(DEBUG_LOG, "a");
-    if (!f) return;
-    time_t now = time(nullptr);
-    struct tm* t = localtime(&now);
-    char ts[32];
-    strftime(ts, sizeof(ts), "%H:%M:%S", t);
-    fprintf(f, "[%s pid=%d] %s\n", ts, getpid(), msg);
-    fclose(f);
+    // globalize_path resolves res:// to the actual filesystem path
+    String project_path = ps->globalize_path("res://");
+    std::string path = project_path.utf8().get_data();
+
+    // strip trailing slash(es)
+    while (!path.empty() && path.back() == '/') {
+        path.pop_back();
+    }
+
+    // extract directory name (last component)
+    size_t last_sep = path.rfind('/');
+    std::string dirname = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
+
+    if (dirname.empty()) {
+        return "/tmp/godot-peek.sock";
+    }
+
+    // sanitize: lowercase, replace non-alphanumeric with dash
+    std::string sanitized;
+    for (char c : dirname) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            sanitized += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        } else if (!sanitized.empty() && sanitized.back() != '-') {
+            sanitized += '-';
+        }
+    }
+    // trim trailing dash
+    while (!sanitized.empty() && sanitized.back() == '-') {
+        sanitized.pop_back();
+    }
+
+    if (sanitized.empty()) {
+        return "/tmp/godot-peek.sock";
+    }
+
+    return "/tmp/godot-peek-" + sanitized + ".sock";
 }
 
 void GodotPeekPlugin::_bind_methods() {
@@ -63,34 +92,24 @@ GodotPeekPlugin::GodotPeekPlugin() {
 }
 
 GodotPeekPlugin::~GodotPeekPlugin() {
-    debug_log("~GodotPeekPlugin destructor called");
-    // only stop the server if it's actually running (editor process).
-    // game child processes never start() so stop() would be a no-op,
-    // but guard anyway to be safe against unlink()ing the editor's socket.
+    // only stop if we actually own the socket (is_running checks owns_socket internally)
     if (socket_server && socket_server->is_running()) {
         socket_server->stop();
     }
 }
 
 void GodotPeekPlugin::_enter_tree() {
-    debug_log("_enter_tree called");
-
-    // only start the socket server in the editor process, not in game child processes.
-    // the gdextension can load in game processes too, and if we start() there it will
-    // unlink() the editor's socket file, killing all MCP connections.
-    if (!Engine::get_singleton()->is_editor_hint()) {
-        debug_log("_enter_tree: NOT editor, skipping socket server");
-        return;
-    }
+    socket_path = get_project_socket_path();
 
     UtilityFunctions::print("GodotPeekPlugin: starting socket server...");
 
-    if (socket_server->start(SOCKET_PATH)) {
-        debug_log("socket server started OK");
-        UtilityFunctions::print("GodotPeekPlugin: listening on ", SOCKET_PATH);
+    // start() probes the existing socket first - if another instance (eg the
+    // editor process when we're a game child process) is already listening,
+    // it returns false without touching the socket file.
+    if (socket_server->start(socket_path)) {
+        UtilityFunctions::print("GodotPeekPlugin: listening on ", socket_path.c_str());
     } else {
-        debug_log("socket server FAILED to start");
-        UtilityFunctions::printerr("GodotPeekPlugin: failed to start socket server");
+        UtilityFunctions::print("GodotPeekPlugin: socket server not started (another instance owns ", socket_path.c_str(), ")");
     }
 
     // register debugger plugin so we can control breakpoints and stepping
@@ -101,13 +120,6 @@ void GodotPeekPlugin::_enter_tree() {
 }
 
 void GodotPeekPlugin::_exit_tree() {
-    debug_log("_exit_tree called");
-
-    if (!Engine::get_singleton()->is_editor_hint()) {
-        debug_log("_exit_tree: NOT editor, skipping");
-        return;
-    }
-
     UtilityFunctions::print("GodotPeekPlugin: stopping...");
 
     // unregister debugger plugin
@@ -115,22 +127,11 @@ void GodotPeekPlugin::_exit_tree() {
         remove_debugger_plugin(debugger_plugin);
     }
 
+    // stop() only unlinks the socket file if we own it (owns_socket flag)
     socket_server->stop();
-    debug_log("_exit_tree done, socket stopped");
 }
 
 void GodotPeekPlugin::_process(double delta) {
-    // diagnostic heartbeat: log every 30s so we can tell if _process stops
-    heartbeat_timer += delta;
-    if (heartbeat_timer >= 30.0) {
-        heartbeat_timer = 0.0;
-        bool running = socket_server && socket_server->is_running();
-        bool sock_exists = (access(SOCKET_PATH, F_OK) == 0);
-        char msg[256];
-        snprintf(msg, sizeof(msg), "heartbeat: socket_running=%d sock_file_exists=%d", running, sock_exists);
-        debug_log(msg);
-    }
-
     // check auto-stop timer
     if (auto_stop_active) {
         auto_stop_timeout -= delta;

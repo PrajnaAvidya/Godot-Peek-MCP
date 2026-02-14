@@ -29,9 +29,9 @@ Extract it somewhere convenient (e.g. `~/tools/godot-peek-mcp/`). You'll get:
 
 Copy the `addons/godot_mcp` folder into your Godot project so you end up with `your-project/addons/godot_mcp/`. Then enable it in Godot: **Project > Project Settings > Plugins > Godot Peek MCP > Enable**.
 
-You should see this in the Output panel:
+You should see something like this in the Output panel (the socket name is derived from your project directory):
 ```
-[GodotPeek] Socket server listening on /tmp/godot-peek.sock
+GodotPeekPlugin: listening on /tmp/godot-peek-my-game.sock
 ```
 
 ### 3. Register the MCP server
@@ -47,7 +47,7 @@ Run this from your Godot project directory, pointing to the `godot-peek-mcp` bin
 claude mcp add godot-peek ~/tools/godot-peek-mcp/godot-peek-mcp
 ```
 
-Restart Claude Code or run `/mcp` to verify the connection.
+The socket path is automatically derived from the working directory name. Restart Claude Code or run `/mcp` to verify the connection.
 </details>
 
 <details>
@@ -64,6 +64,8 @@ Create or edit `.cursor/mcp.json` in your project root:
   }
 }
 ```
+
+Make sure to open the project from the Godot project directory so the working directory matches.
 </details>
 
 <details>
@@ -214,7 +216,7 @@ The runtime helper script (`peek_runtime_helper.gd`) stays included since it's r
 │   Claude Code #1    │◄──────────────►│  Go MCP Server #1   │──┐
 └─────────────────────┘                └─────────────────────┘  │
 ┌─────────────────────┐     stdio      ┌─────────────────────┐  │ Unix socket
-│   Claude Code #2    │◄──────────────►│  Go MCP Server #2   │──┤ /tmp/godot-peek.sock
+│   Claude Code #2    │◄──────────────►│  Go MCP Server #2   │──┤ /tmp/godot-peek-<project>.sock
 └─────────────────────┘                └─────────────────────┘  │
                                             ...                 │
                                        ┌────────────────────────▼┐

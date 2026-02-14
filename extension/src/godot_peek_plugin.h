@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/editor_plugin.hpp>
 #include <godot_cpp/classes/ref.hpp>
 #include <memory>  // for std::unique_ptr
+#include <string>
 
 // forward declarations to avoid including full headers
 class SocketServer;
@@ -46,8 +47,8 @@ private:
     double auto_stop_timeout = 0.0;   // seconds remaining, 0 = disabled
     bool auto_stop_active = false;
 
-    // diagnostic: track time since last heartbeat log
-    double heartbeat_timer = 0.0;
+    // project-specific socket path (computed at enter_tree)
+    std::string socket_path;
 };
 
 }
