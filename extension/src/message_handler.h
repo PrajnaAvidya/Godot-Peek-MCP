@@ -46,7 +46,7 @@ private:
     std::string handle_get_monitors(int64_t id);
     std::string handle_get_debugger_stack_trace(int64_t id);
     std::string handle_get_debugger_locals(int64_t id);
-    std::string handle_get_remote_scene_tree(int64_t id);
+    std::string handle_get_remote_scene_tree(int64_t id, const std::string& params_str);
     std::string handle_get_remote_node_properties(int64_t id, const std::string& params_str);
 
     // debugger control handlers

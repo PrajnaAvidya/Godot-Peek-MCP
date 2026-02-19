@@ -79,7 +79,7 @@ std::string MessageHandler::handle(const std::string& message) {
     } else if (method == "get_debugger_locals") {
         return handle_get_debugger_locals(id);
     } else if (method == "get_remote_scene_tree") {
-        return handle_get_remote_scene_tree(id);
+        return handle_get_remote_scene_tree(id, params_str);
     } else if (method == "get_remote_node_properties") {
         return handle_get_remote_node_properties(id, params_str);
     } else if (method == "set_breakpoint") {
@@ -601,8 +601,9 @@ std::string MessageHandler::handle_get_debugger_locals(int64_t id) {
     return make_result(id, result.dump());
 }
 
-// helper: extract scene tree text with type info from tooltips
-static std::string get_scene_tree_item_text(TreeItem* item, int depth) {
+// helper: extract scene tree text with type info from tooltips.
+// max_depth: 0 = unlimited, >0 = stop recursing at that depth.
+static std::string get_scene_tree_item_text(TreeItem* item, int depth, int max_depth) {
     std::string result;
     std::string indent(depth * 2, ' ');
 
@@ -634,19 +635,42 @@ static std::string get_scene_tree_item_text(TreeItem* item, int depth) {
         result += "\n";
     }
 
+    // check depth limit before recursing
+    if (max_depth > 0 && depth >= max_depth) {
+        // count children to show what was truncated
+        int child_count = 0;
+        TreeItem* child = item->get_first_child();
+        while (child) {
+            child_count++;
+            child = child->get_next();
+        }
+        if (child_count > 0) {
+            std::string child_indent((depth + 1) * 2, ' ');
+            result += child_indent + "(... " + std::to_string(child_count) + " children)\n";
+        }
+        return result;
+    }
+
     // recurse into children
     TreeItem* child = item->get_first_child();
     while (child) {
-        result += get_scene_tree_item_text(child, depth + 1);
+        result += get_scene_tree_item_text(child, depth + 1, max_depth);
         child = child->get_next();
     }
 
     return result;
 }
 
-std::string MessageHandler::handle_get_remote_scene_tree(int64_t id) {
+std::string MessageHandler::handle_get_remote_scene_tree(int64_t id, const std::string& params_str) {
     if (!control_finder) {
         return make_error(id, -32000, "Control finder not initialized");
+    }
+
+    // parse optional max_depth (0 = unlimited)
+    int max_depth = 0;
+    json params = json::parse(params_str, nullptr, false);
+    if (!params.is_discarded() && params.contains("max_depth") && params["max_depth"].is_number_integer()) {
+        max_depth = params["max_depth"].get<int>();
     }
 
     // try without clicking first
@@ -687,7 +711,7 @@ std::string MessageHandler::handle_get_remote_scene_tree(int64_t id) {
     }
 
     // extract tree with type info
-    std::string tree_text = get_scene_tree_item_text(root, 0);
+    std::string tree_text = get_scene_tree_item_text(root, 0, max_depth);
 
     json result = {
         {"tree", tree_text},

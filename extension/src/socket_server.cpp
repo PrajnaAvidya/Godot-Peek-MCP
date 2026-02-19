@@ -196,18 +196,30 @@ void SocketServer::poll(MessageCallback on_message) {
                 if (!message.empty()) {
                     std::string response = on_message(message);
 
-                    // send response back to this specific client
-                    // uses send() instead of write() so we can pass MSG_NOSIGNAL
-                    // on linux to prevent SIGPIPE if client disconnected between
-                    // sending its request and receiving our response
+                    // send response back to this specific client.
+                    // large responses (e.g. huge scene trees) may not fit in one
+                    // send() call, so temporarily switch to blocking and loop.
                     if (!response.empty()) {
                         response += '\n';
-                        ssize_t written = send(client.fd, response.c_str(), response.length(), SEND_FLAGS);
-                        if (written < 0) {
-                            // write failed (EPIPE, ECONNRESET, etc) - client is dead
-                            client_dead = true;
-                            break;
+                        const char* data = response.c_str();
+                        size_t remaining = response.length();
+
+                        // temporarily block so send() waits for buffer space
+                        int fl = fcntl(client.fd, F_GETFL, 0);
+                        fcntl(client.fd, F_SETFL, fl & ~O_NONBLOCK);
+
+                        while (remaining > 0) {
+                            ssize_t written = send(client.fd, data, remaining, SEND_FLAGS);
+                            if (written <= 0) {
+                                client_dead = true;
+                                break;
+                            }
+                            data += written;
+                            remaining -= written;
                         }
+
+                        // restore non-blocking
+                        fcntl(client.fd, F_SETFL, fl);
                     }
                 }
             }

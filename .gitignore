@@ -8,4 +8,5 @@
 # c++ extension build artifacts
 extension/src/*.os
 extension/.sconsign.dblite
+extension/tests/test_runner
 addons/godot_mcp/bin/

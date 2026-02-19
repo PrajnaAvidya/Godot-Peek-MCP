@@ -69,9 +69,14 @@ func (c *Client) Connect(ctx context.Context) error {
 		return fmt.Errorf("dial unix socket: %w", err)
 	}
 
+	// scanner needs a larger buffer for big responses (e.g. huge scene trees).
+	// default bufio.Scanner max is 64KB which is too small.
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024) // 64KB initial, 16MB max
+
 	c.mu.Lock()
 	c.conn = conn
-	c.reader = bufio.NewScanner(conn)
+	c.reader = scanner
 	c.connected = true
 	c.mu.Unlock()
 
@@ -539,10 +544,18 @@ func (c *Client) GetLocals(ctx context.Context, frameIndex int) (*LocalsResult, 
 	return &result, nil
 }
 
-// GetRemoteSceneTree fetches instantiated node tree from running game
-// automatically retries once if the C++ extension indicates pending (Remote button was just clicked)
-func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, error) {
-	resp, err := c.sendRequest(ctx, "get_remote_scene_tree", nil)
+// GetRemoteSceneTree fetches instantiated node tree from running game.
+// maxDepth: 0 = unlimited, >0 = stop recursing at that depth.
+// automatically retries once if the C++ extension indicates pending (Remote button was just clicked).
+func (c *Client) GetRemoteSceneTree(ctx context.Context, maxDepth int) (*SceneTreeResult, error) {
+	var params interface{}
+	if maxDepth > 0 {
+		params = struct {
+			MaxDepth int `json:"max_depth"`
+		}{MaxDepth: maxDepth}
+	}
+
+	resp, err := c.sendRequest(ctx, "get_remote_scene_tree", params)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +574,7 @@ func (c *Client) GetRemoteSceneTree(ctx context.Context) (*SceneTreeResult, erro
 	if result.Pending {
 		time.Sleep(150 * time.Millisecond)
 
-		resp, err = c.sendRequest(ctx, "get_remote_scene_tree", nil)
+		resp, err = c.sendRequest(ctx, "get_remote_scene_tree", params)
 		if err != nil {
 			return nil, err
 		}

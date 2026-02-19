@@ -109,7 +109,10 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	// get_remote_scene_tree - get instantiated node tree from running game
 	s.AddTool(
 		mcp.NewTool("get_remote_scene_tree",
-			mcp.WithDescription("Get instantiated node tree from running game (requires game to be running)"),
+			mcp.WithDescription("Get instantiated node tree from running game (requires game to be running). Use max_depth for large scenes."),
+			mcp.WithNumber("max_depth",
+				mcp.Description("Max tree depth to return (0 or omit for unlimited). Truncated branches show child count."),
+			),
 		),
 		makeGetRemoteSceneTree(client),
 	)
@@ -470,7 +473,15 @@ func makeGetRemoteSceneTree(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		result, err := client.GetRemoteSceneTree(ctx)
+		maxDepth := 0
+		args := req.GetArguments()
+		if args != nil {
+			if v, ok := args["max_depth"].(float64); ok {
+				maxDepth = int(v)
+			}
+		}
+
+		result, err := client.GetRemoteSceneTree(ctx, maxDepth)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to get remote scene tree: %v", err)), nil
 		}

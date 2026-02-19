@@ -145,7 +145,7 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 | `get_debugger_stack_trace` | Get stack trace when paused on error/breakpoint | none |
 | `get_debugger_locals` | Get local variables when paused on error/breakpoint | `frame_index` (optional, 0=top) |
 | `get_monitors` | Get performance monitors (FPS, memory, etc.) | none |
-| `get_remote_scene_tree` | Get node tree from running game | none |
+| `get_remote_scene_tree` | Get node tree from running game | `max_depth` (optional, 0=unlimited) |
 | `get_remote_node_properties` | Get node properties | `node_path` (e.g. /root/game/Player) |
 
 ### Screenshots
