@@ -36,6 +36,12 @@ type Client struct {
 	// channel for output notifications
 	outputCh chan OutputNotification
 
+	// last run params for restart_scene
+	lastRunMethod    string // "main", "scene", or "current"
+	lastRunScenePath string // only populated for "scene"
+	lastRunOverrides Overrides
+	lastRunTimeout   float64
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -239,6 +245,16 @@ func (c *Client) GetOutput(clear bool) []OutputNotification {
 	return result
 }
 
+// saveLastRun records params for restart_scene
+func (c *Client) saveLastRun(method string, scenePath string, overrides Overrides, timeout float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastRunMethod = method
+	c.lastRunScenePath = scenePath
+	c.lastRunOverrides = overrides
+	c.lastRunTimeout = timeout
+}
+
 // writeOverrides writes the overrides file for the runtime helper to read
 func writeOverrides(overrides Overrides) error {
 	if len(overrides) == 0 {
@@ -389,6 +405,7 @@ func (c *Client) RunMainScene(ctx context.Context, overrides Overrides, timeout 
 	}
 
 	c.checkStartupErrors(ctx, &result, timeout)
+	c.saveLastRun("main", "", overrides, timeout)
 	return &result, nil
 }
 
@@ -421,6 +438,7 @@ func (c *Client) RunScene(ctx context.Context, scenePath string, overrides Overr
 	}
 
 	c.checkStartupErrors(ctx, &result, timeout)
+	c.saveLastRun("scene", scenePath, overrides, timeout)
 	return &result, nil
 }
 
@@ -452,6 +470,7 @@ func (c *Client) RunCurrentScene(ctx context.Context, overrides Overrides, timeo
 	}
 
 	c.checkStartupErrors(ctx, &result, timeout)
+	c.saveLastRun("current", "", overrides, timeout)
 	return &result, nil
 }
 
@@ -465,6 +484,48 @@ func (c *Client) StopScene(ctx context.Context) error {
 		return fmt.Errorf("godot error: %s", resp.Error.Message)
 	}
 	return nil
+}
+
+// RestartScene stops the running scene and re-runs with last params
+func (c *Client) RestartScene(ctx context.Context) (*GenericResult, error) {
+	// read last run params
+	c.mu.RLock()
+	method := c.lastRunMethod
+	scenePath := c.lastRunScenePath
+	overrides := c.lastRunOverrides
+	timeout := c.lastRunTimeout
+	c.mu.RUnlock()
+
+	if method == "" {
+		return nil, fmt.Errorf("no scene has been run yet")
+	}
+
+	// stop current scene (ignore error if nothing running)
+	c.StopScene(ctx)
+
+	// poll until scene actually stops (max ~2s)
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		state, err := c.GetDebuggerState(ctx)
+		if err != nil {
+			break
+		}
+		if !state.IsPlaying {
+			break
+		}
+	}
+
+	// re-run with saved params
+	switch method {
+	case "main":
+		return c.RunMainScene(ctx, overrides, timeout)
+	case "scene":
+		return c.RunScene(ctx, scenePath, overrides, timeout)
+	case "current":
+		return c.RunCurrentScene(ctx, overrides, timeout)
+	default:
+		return nil, fmt.Errorf("unknown run method: %s", method)
+	}
 }
 
 // GetOutputFromGodot fetches output buffer from Godot directly

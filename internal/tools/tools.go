@@ -65,6 +65,14 @@ func Register(s *server.MCPServer, client *godot.Client) {
 		makeStopScene(client),
 	)
 
+	// restart_scene - stop and re-run with same params
+	s.AddTool(
+		mcp.NewTool("restart_scene",
+			mcp.WithDescription("Restart the running scene. Stops and re-runs with the exact same method, scene path, overrides, and timeout from the last run."),
+		),
+		makeRestartScene(client),
+	)
+
 	// get_output - get buffered output/logs
 	s.AddTool(
 		mcp.NewTool("get_output",
@@ -362,6 +370,30 @@ func makeStopScene(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText("Scene stopped"), nil
+	}
+}
+
+func makeRestartScene(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.RestartScene(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to restart scene: %v", err)), nil
+		}
+
+		if result.ErrorDetected {
+			return mcp.NewToolResultError(fmt.Sprintf("Scene crashed on startup:\n\n%s", result.StackTrace)), nil
+		}
+
+		msg := "Scene restarted successfully"
+		if result.Warnings != "" {
+			msg += fmt.Sprintf("\n\nWarnings:\n%s", result.Warnings)
+		}
+
+		return mcp.NewToolResultText(msg), nil
 	}
 }
 
