@@ -132,6 +132,7 @@ xattr -cr ~/your-project/addons/godot_mcp/bin/
 | `run_scene` | Run a specific scene | `scene_path`, `timeout_seconds`, `overrides` (optional) |
 | `run_current_scene` | Run currently open scene | `timeout_seconds`, `overrides` (optional) |
 | `stop_scene` | Stop the running game | none |
+| `restart_scene` | Stop and re-run with same settings from last run | none |
 
 **overrides**: Set autoload variables at startup. Format: `{"AutoloadName": {"property": value}}`
 Example: `{"DebugManager": {"debug_mode": true}}`
