@@ -102,6 +102,23 @@ Edit your config file (`~/Library/Application Support/Claude/claude_desktop_conf
 
 That's it. You're done.
 
+## Configuration
+
+Disable specific MCP tools via JSON config. Two files, project overrides global:
+
+| Level | Path |
+|---|---|
+| Global | `~/.config/godot-peek-mcp/config.json` |
+| Project | `.godot-peek-mcp.json` (in project root) |
+
+```json
+{
+  "disabled_tools": ["run_main_scene", "stop_scene", "restart_scene"]
+}
+```
+
+All tools are enabled by default. The project config **replaces** (not merges with) the global `disabled_tools` list. Unknown tool names are logged as warnings on startup. Config is read when the MCP server starts, so restart the MCP session to pick up changes (no need to restart Godot).
+
 ### macOS: clearing quarantine
 
 macOS may block unsigned binaries downloaded from the internet. If you get a security warning, run:

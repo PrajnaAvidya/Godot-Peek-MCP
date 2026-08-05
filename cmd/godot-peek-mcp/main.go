@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/PrajnaAvidya/godot-peek-mcp/internal/config"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/tools"
 )
@@ -51,22 +52,28 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	// get project directory for socket path and config
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
 	// socket path resolution:
 	// 1. GODOT_PEEK_SOCKET env var (explicit full path override)
 	// 2. derive from cwd directory name (matches C++ plugin logic)
 	socketPath := os.Getenv("GODOT_PEEK_SOCKET")
 	if socketPath == "" {
-		dir, err := os.Getwd()
-		if err == nil {
-			sanitized := sanitizeProjectName(filepath.Base(dir))
-			if sanitized != "" {
-				socketPath = "/tmp/godot-peek-" + sanitized + ".sock"
-			}
+		sanitized := sanitizeProjectName(filepath.Base(projectDir))
+		if sanitized != "" {
+			socketPath = "/tmp/godot-peek-" + sanitized + ".sock"
 		}
 	}
 	if socketPath == "" {
 		socketPath = godot.DefaultSocketPath
 	}
+
+	// load tool config (global + project overrides)
+	cfg, _ := config.Load(projectDir)
 
 	client := godot.NewClient(socketPath)
 
@@ -83,8 +90,8 @@ func run(ctx context.Context) error {
 		server.WithToolCapabilities(true),
 	)
 
-	// register tools
-	tools.Register(mcpServer, client)
+	// register tools (respects config's disabled_tools)
+	tools.Register(mcpServer, client, cfg)
 
 	log.Printf("starting MCP server (connected to %s)", socketPath)
 

@@ -3,16 +3,56 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/PrajnaAvidya/godot-peek-mcp/internal/config"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
 )
 
-// Register adds all Godot tools to the MCP server
-func Register(s *server.MCPServer, client *godot.Client) {
+// all known tool names for validation
+var allToolNames = map[string]bool{
+	"run_main_scene":             true,
+	"run_scene":                  true,
+	"run_current_scene":          true,
+	"stop_scene":                 true,
+	"restart_scene":              true,
+	"get_output":                 true,
+	"get_debugger_errors":        true,
+	"get_debugger_stack_trace":   true,
+	"get_debugger_locals":        true,
+	"get_remote_scene_tree":      true,
+	"get_remote_node_properties": true,
+	"get_screenshot":             true,
+	"get_monitors":               true,
+	"set_breakpoint":             true,
+	"clear_breakpoints":          true,
+	"get_debugger_state":         true,
+	"debug_continue":             true,
+	"debug_step":                 true,
+	"debug_break":                true,
+	"evaluate_expression":        true,
+}
+
+// Register adds all Godot tools to the MCP server, skipping disabled tools
+func Register(s *server.MCPServer, client *godot.Client, cfg *config.Config) {
+	for _, name := range cfg.DisabledTools {
+		if !allToolNames[name] {
+			log.Printf("warning: unknown tool name in disabled_tools: %q", name)
+		}
+	}
+
+	addIfEnabled := func(name string, tool mcp.Tool, handler server.ToolHandlerFunc) {
+		if !cfg.Disabled(name) {
+			s.AddTool(tool, handler)
+		} else {
+			log.Printf("tool disabled by config: %s", name)
+		}
+	}
+
 	// run_main_scene - F5 equivalent
-	s.AddTool(
+	addIfEnabled("run_main_scene",
 		mcp.NewTool("run_main_scene",
 			mcp.WithDescription("Run the project's main scene (equivalent to F5 in Godot editor)"),
 			mcp.WithNumber("timeout_seconds",
@@ -26,7 +66,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// run_scene - run specific scene
-	s.AddTool(
+	addIfEnabled("run_scene",
 		mcp.NewTool("run_scene",
 			mcp.WithDescription("Run a specific scene file"),
 			mcp.WithString("scene_path",
@@ -44,7 +84,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// run_current_scene - run currently open scene
-	s.AddTool(
+	addIfEnabled("run_current_scene",
 		mcp.NewTool("run_current_scene",
 			mcp.WithDescription("Run the currently open scene in the editor"),
 			mcp.WithNumber("timeout_seconds",
@@ -58,7 +98,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// stop_scene - stop running game
-	s.AddTool(
+	addIfEnabled("stop_scene",
 		mcp.NewTool("stop_scene",
 			mcp.WithDescription("Stop the currently running game/scene"),
 		),
@@ -66,7 +106,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// restart_scene - stop and re-run with same params
-	s.AddTool(
+	addIfEnabled("restart_scene",
 		mcp.NewTool("restart_scene",
 			mcp.WithDescription("Restart the running scene. Stops and re-runs with the exact same method, scene path, overrides, and timeout from the last run."),
 		),
@@ -74,7 +114,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_output - get buffered output/logs
-	s.AddTool(
+	addIfEnabled("get_output",
 		mcp.NewTool("get_output",
 			mcp.WithDescription("Get output from the Godot Output panel (print statements, errors, warnings)"),
 			mcp.WithBoolean("new_only",
@@ -88,7 +128,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_debugger_errors - get debugger errors/warnings
-	s.AddTool(
+	addIfEnabled("get_debugger_errors",
 		mcp.NewTool("get_debugger_errors",
 			mcp.WithDescription("Get errors and warnings from the Godot Debugger Errors tab"),
 		),
@@ -96,7 +136,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_debugger_stack_trace - get stack trace on runtime error
-	s.AddTool(
+	addIfEnabled("get_debugger_stack_trace",
 		mcp.NewTool("get_debugger_stack_trace",
 			mcp.WithDescription("Get stack trace from Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
 		),
@@ -104,7 +144,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_debugger_locals - get local variables for selected stack frame
-	s.AddTool(
+	addIfEnabled("get_debugger_locals",
 		mcp.NewTool("get_debugger_locals",
 			mcp.WithDescription("Get local variables from Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
 			mcp.WithNumber("frame_index",
@@ -115,7 +155,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_remote_scene_tree - get instantiated node tree from running game
-	s.AddTool(
+	addIfEnabled("get_remote_scene_tree",
 		mcp.NewTool("get_remote_scene_tree",
 			mcp.WithDescription("Get instantiated node tree from running game (requires game to be running). Use max_depth for large scenes."),
 			mcp.WithNumber("max_depth",
@@ -126,7 +166,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_remote_node_properties - get properties of a specific node from running game
-	s.AddTool(
+	addIfEnabled("get_remote_node_properties",
 		mcp.NewTool("get_remote_node_properties",
 			mcp.WithDescription("Get properties of a specific node from the running game (requires game to be running)"),
 			mcp.WithString("node_path",
@@ -138,7 +178,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_screenshot - capture game or editor viewport
-	s.AddTool(
+	addIfEnabled("get_screenshot",
 		mcp.NewTool("get_screenshot",
 			mcp.WithDescription("Capture a screenshot from the running game or editor viewports. Returns file path to PNG image."),
 			mcp.WithString("target",
@@ -150,7 +190,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_monitors - get engine performance monitors
-	s.AddTool(
+	addIfEnabled("get_monitors",
 		mcp.NewTool("get_monitors",
 			mcp.WithDescription("Get engine performance monitors (FPS, memory, object count, etc.) from the Debugger Monitors tab"),
 		),
@@ -158,7 +198,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// set_breakpoint - set or remove a breakpoint
-	s.AddTool(
+	addIfEnabled("set_breakpoint",
 		mcp.NewTool("set_breakpoint",
 			mcp.WithDescription("Set or remove a breakpoint at a specific file and line"),
 			mcp.WithString("path",
@@ -177,7 +217,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// clear_breakpoints - remove all breakpoints
-	s.AddTool(
+	addIfEnabled("clear_breakpoints",
 		mcp.NewTool("clear_breakpoints",
 			mcp.WithDescription("Remove all breakpoints"),
 		),
@@ -185,7 +225,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// get_debugger_state - check debugger state
-	s.AddTool(
+	addIfEnabled("get_debugger_state",
 		mcp.NewTool("get_debugger_state",
 			mcp.WithDescription("Get current debugger state: whether paused at breakpoint, session active, debuggable"),
 		),
@@ -193,7 +233,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// debug_continue - resume execution
-	s.AddTool(
+	addIfEnabled("debug_continue",
 		mcp.NewTool("debug_continue",
 			mcp.WithDescription("Resume execution after hitting a breakpoint"),
 		),
@@ -201,7 +241,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// debug_step - step through code
-	s.AddTool(
+	addIfEnabled("debug_step",
 		mcp.NewTool("debug_step",
 			mcp.WithDescription("Step through code when paused at breakpoint"),
 			mcp.WithString("mode",
@@ -212,7 +252,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// debug_break - pause execution
-	s.AddTool(
+	addIfEnabled("debug_break",
 		mcp.NewTool("debug_break",
 			mcp.WithDescription("Pause execution of the running game"),
 		),
@@ -220,7 +260,7 @@ func Register(s *server.MCPServer, client *godot.Client) {
 	)
 
 	// evaluate_expression - evaluate GDScript in running game
-	s.AddTool(
+	addIfEnabled("evaluate_expression",
 		mcp.NewTool("evaluate_expression",
 			mcp.WithDescription("Evaluate GDScript code in the running game. Supports full GDScript: variables, multi-line, return statements. Single-line expressions auto-return their value. Multi-line code must use explicit 'return' to get a value back. The code runs as a function body on a Node added to the scene root, so get_node(), get_tree() etc work. Requires game running with peek_runtime_helper autoload. WARNING: If expression triggers a runtime error, this tool may timeout (game crashes before responding)."),
 			mcp.WithString("expression",
