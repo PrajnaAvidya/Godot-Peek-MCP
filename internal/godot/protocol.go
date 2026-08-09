@@ -200,3 +200,28 @@ type EvaluateResult struct {
 	Error string `json:"error,omitempty"`
 }
 
+// GetProfilerFrameParams for get_profiler_frame method
+type GetProfilerFrameParams struct {
+	FrameNumber int `json:"frame_number"`
+}
+
+// ProfilerFrameItem represents a single row in the profiler call tree
+type ProfilerFrameItem struct {
+	Depth       int      `json:"depth"`
+	Function    string   `json:"function"`
+	TimePercent string   `json:"time_percent"`
+	SelfTime    string   `json:"self_time"`
+	TotalTime   string   `json:"total_time"`
+	Calls       string   `json:"calls"`
+	ExtraCols   []string `json:"extra_columns,omitempty"`
+}
+
+// ProfilerFrameResult from get_profiler_frame
+type ProfilerFrameResult struct {
+	FrameNumber int                 `json:"frame_number"`
+	FrameMax    float64             `json:"frame_max"`
+	Columns     []string            `json:"columns"`
+	Items       []ProfilerFrameItem `json:"items"`
+	Count       int                 `json:"count"`
+}
+

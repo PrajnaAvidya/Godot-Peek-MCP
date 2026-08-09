@@ -26,6 +26,7 @@ var allToolNames = map[string]bool{
 	"get_remote_node_properties": true,
 	"get_screenshot":             true,
 	"get_monitors":               true,
+	"get_profiler_frame":         true,
 	"set_breakpoint":             true,
 	"clear_breakpoints":          true,
 	"get_debugger_state":         true,
@@ -33,6 +34,7 @@ var allToolNames = map[string]bool{
 	"debug_step":                 true,
 	"debug_break":                true,
 	"evaluate_expression":        true,
+	"discover_profiler":          true,
 }
 
 // Register adds all Godot tools to the MCP server, skipping disabled tools
@@ -197,6 +199,18 @@ func Register(s *server.MCPServer, client *godot.Client, cfg *config.Config) {
 		makeGetMonitors(client),
 	)
 
+	// get_profiler_frame - get profiler call tree for a specific frame
+	addIfEnabled("get_profiler_frame",
+		mcp.NewTool("get_profiler_frame",
+			mcp.WithDescription("Get profiler call tree data for a specific frame number (requires profiler running via Start button or Autostart in Profiler tab)"),
+			mcp.WithNumber("frame_number",
+				mcp.Required(),
+				mcp.Description("Frame number to get profiler data for (0-indexed)"),
+			),
+		),
+		makeGetProfilerFrame(client),
+	)
+
 	// set_breakpoint - set or remove a breakpoint
 	addIfEnabled("set_breakpoint",
 		mcp.NewTool("set_breakpoint",
@@ -269,6 +283,14 @@ func Register(s *server.MCPServer, client *godot.Client, cfg *config.Config) {
 			),
 		),
 		makeEvaluateExpression(client),
+	)
+
+	// discover_profiler - temporary discovery tool for profiler tab controls
+	addIfEnabled("discover_profiler",
+		mcp.NewTool("discover_profiler",
+			mcp.WithDescription("Dump all controls in the Godot Profiler tab (temporary discovery tool for reverse engineering)"),
+		),
+		makeDiscoverProfiler(client),
 	)
 }
 
@@ -801,6 +823,68 @@ func makeEvaluateExpression(client *godot.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("%s (%s)", result.Value, result.Type)), nil
+	}
+}
+
+func makeGetProfilerFrame(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		frameNumberFloat, err := req.RequireFloat("frame_number")
+		if err != nil {
+			return mcp.NewToolResultError("missing required parameter: frame_number"), nil
+		}
+		frameNumber := int(frameNumberFloat)
+
+		result, err := client.GetProfilerFrame(ctx, frameNumber)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get profiler frame: %v", err)), nil
+		}
+
+		if result.Count == 0 {
+			return mcp.NewToolResultText("No profiler data (profiler may not be running, or no frames collected yet)"), nil
+		}
+
+		// format as indented call tree
+		var output string
+		// show column headers
+		output += "Columns: "
+		for i, col := range result.Columns {
+			if i > 0 {
+				output += " | "
+			}
+			output += col
+		}
+		output += "\n"
+		output += fmt.Sprintf("Frame: %d\n\n", result.FrameNumber)
+
+		for _, item := range result.Items {
+			indent := ""
+			for i := 0; i < item.Depth; i++ {
+				indent += "  "
+			}
+			output += fmt.Sprintf("%s%s  [%s]  self=%s  total=%s  calls=%s\n",
+				indent, item.Function, item.TimePercent, item.SelfTime, item.TotalTime, item.Calls)
+		}
+
+		return mcp.NewToolResultText(output), nil
+	}
+}
+
+func makeDiscoverProfiler(client *godot.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !client.IsConnected() {
+			return mcp.NewToolResultError("not connected to Godot editor"), nil
+		}
+
+		result, err := client.DiscoverProfiler(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to discover profiler: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Profiler controls:\n%s", string(result))), nil
 	}
 }
 

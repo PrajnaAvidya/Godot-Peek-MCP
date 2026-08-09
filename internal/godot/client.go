@@ -958,3 +958,40 @@ func (c *Client) GetGameScreenshot(ctx context.Context) (*ScreenshotResult, erro
 	return &result, nil
 }
 
+// GetProfilerFrame gets profiler call tree data for a specific frame
+func (c *Client) GetProfilerFrame(ctx context.Context, frameNumber int) (*ProfilerFrameResult, error) {
+	params := GetProfilerFrameParams{
+		FrameNumber: frameNumber,
+	}
+	resp, err := c.sendRequest(ctx, "get_profiler_frame", params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+
+	var result ProfilerFrameResult
+	if resp.Result != nil {
+		if err := json.Unmarshal(*resp.Result, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// DiscoverProfiler dumps profiler tab controls (temporary discovery tool)
+func (c *Client) DiscoverProfiler(ctx context.Context) (json.RawMessage, error) {
+	resp, err := c.sendRequest(ctx, "discover_profiler", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("godot error: %s", resp.Error.Message)
+	}
+	if resp.Result == nil {
+		return nil, fmt.Errorf("no result")
+	}
+	return *resp.Result, nil
+}
+

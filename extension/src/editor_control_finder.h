@@ -5,6 +5,9 @@
 #include <godot_cpp/classes/rich_text_label.hpp>
 #include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/tree.hpp>
+#include <godot_cpp/classes/spin_box.hpp>
+#include <godot_cpp/classes/button.hpp>
+#include <godot_cpp/classes/option_button.hpp>
 #include <godot_cpp/core/object.hpp>  // ObjectDB
 #include <vector>
 
@@ -73,6 +76,12 @@ public:
     // optionally clicks the Remote button if not already selected
     godot::Tree* get_remote_scene_tree(bool click_remote_button = false);
 
+    // find profiler tab controls (lazy cached)
+    godot::Tree* get_profiler_tree();
+    godot::SpinBox* get_profiler_frame_spinbox();
+    godot::Button* get_profiler_start_button();
+    godot::OptionButton* get_profiler_scope_button();
+
     // clear cached references (call if editor UI changes)
     void invalidate_cache();
 
@@ -96,4 +105,8 @@ private:
     CachedRef<godot::Tree> stack_frames_tree;
     CachedRef<godot::Control> debugger_inspector;
     CachedRef<godot::Control> main_inspector;
+    CachedRef<godot::Tree> profiler_tree;
+    CachedRef<godot::SpinBox> profiler_frame_spinbox;
+    CachedRef<godot::Button> profiler_start_button;
+    CachedRef<godot::OptionButton> profiler_scope_button;
 };

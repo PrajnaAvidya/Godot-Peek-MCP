@@ -133,7 +133,7 @@ xattr -cr ~/your-project/addons/godot_mcp/bin/
 - **Scene Control**: Run main/current/specific scenes, stop the game
 - **Variable Overrides**: Set autoload variables at startup (e.g. enable debug mode)
 - **Output Capture**: Read the Output panel
-- **Debugger Integration**: Errors, stack traces, local variables, performance monitors
+- **Debugger Integration**: Errors, stack traces, local variables, performance monitors, profiler frame data
 - **Debugger Control**: Set breakpoints, step through code, pause/continue
 - **Runtime Inspection**: Node tree and properties from running game
 - **Screenshots**: Editor viewports or running game
@@ -163,6 +163,7 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 | `get_debugger_stack_trace` | Get stack trace when paused on error/breakpoint | none |
 | `get_debugger_locals` | Get local variables when paused on error/breakpoint | `frame_index` (optional, 0=top) |
 | `get_monitors` | Get performance monitors (FPS, memory, etc.) | none |
+| `get_profiler_frame` | Get profiler call tree for a specific frame | `frame_number` (0-indexed) |
 | `get_remote_scene_tree` | Get node tree from running game | `max_depth` (optional, 0=unlimited) |
 | `get_remote_node_properties` | Get node properties | `node_path` (e.g. /root/game/Player) |
 
@@ -224,6 +225,8 @@ The runtime helper script (`peek_runtime_helper.gd`) stays included since it's r
 **Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
 
 **Monitors** (`get_monitors`) shows engine performance data: FPS, memory usage, draw calls, physics stats, etc.
+
+**Profiler** (`get_profiler_frame`) returns the call tree for a specific frame with Self time, total time, and call counts. Requires the profiler to be running (click "Start" or enable "Autostart" in the Profiler tab). The scope dropdown is automatically switched to "Self" mode for cleaner data.
 
 **Screenshots** save to `/tmp/godot_peek_*.png`. Editor screenshots capture active 2D/3D viewports. Game screenshots require the autoload that the plugin adds automatically.
 
