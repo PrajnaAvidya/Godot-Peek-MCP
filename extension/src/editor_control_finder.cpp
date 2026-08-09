@@ -317,6 +317,121 @@ Tree* EditorControlFinder::get_remote_scene_tree(bool click_remote_button) {
     return nullptr;
 }
 
+Tree* EditorControlFinder::get_profiler_tree() {
+    Tree* cached = profiler_tree.get();
+    if (cached) {
+        return cached;
+    }
+
+    EditorInterface* editor = EditorInterface::get_singleton();
+    if (!editor) return nullptr;
+
+    Control* base = editor->get_base_control();
+    if (!base) return nullptr;
+
+    auto trees = find_all_by_class(base, "Tree");
+
+    for (Node* node : trees) {
+        String path = node->get_path();
+        if (path.contains("/Profiler/")) {
+            profiler_tree.set(Object::cast_to<Tree>(node));
+            UtilityFunctions::print("EditorControlFinder: found profiler tree at ", path);
+            break;
+        }
+    }
+
+    return profiler_tree.get();
+}
+
+SpinBox* EditorControlFinder::get_profiler_frame_spinbox() {
+    SpinBox* cached = profiler_frame_spinbox.get();
+    if (cached) {
+        return cached;
+    }
+
+    EditorInterface* editor = EditorInterface::get_singleton();
+    if (!editor) return nullptr;
+
+    Control* base = editor->get_base_control();
+    if (!base) return nullptr;
+
+    auto spinners = find_all_by_class(base, "SpinBox");
+
+    for (Node* node : spinners) {
+        String path = node->get_path();
+        if (path.contains("/Profiler/")) {
+            profiler_frame_spinbox.set(Object::cast_to<SpinBox>(node));
+            UtilityFunctions::print("EditorControlFinder: found profiler spinbox at ", path);
+            break;
+        }
+    }
+
+    return profiler_frame_spinbox.get();
+}
+
+Button* EditorControlFinder::get_profiler_start_button() {
+    Button* cached = profiler_start_button.get();
+    if (cached) {
+        return cached;
+    }
+
+    EditorInterface* editor = EditorInterface::get_singleton();
+    if (!editor) return nullptr;
+
+    Control* base = editor->get_base_control();
+    if (!base) return nullptr;
+
+    auto buttons = find_all_by_class(base, "Button");
+
+    for (Node* node : buttons) {
+        String path = node->get_path();
+        if (path.contains("/Profiler/")) {
+            Button* btn = Object::cast_to<Button>(node);
+            if (btn && btn->get_text() == "Start") {
+                profiler_start_button.set(btn);
+                UtilityFunctions::print("EditorControlFinder: found profiler start button at ", path);
+                break;
+            }
+        }
+    }
+
+    return profiler_start_button.get();
+}
+
+OptionButton* EditorControlFinder::get_profiler_scope_button() {
+    OptionButton* cached = profiler_scope_button.get();
+    if (cached) {
+        return cached;
+    }
+
+    EditorInterface* editor = EditorInterface::get_singleton();
+    if (!editor) return nullptr;
+
+    Control* base = editor->get_base_control();
+    if (!base) return nullptr;
+
+    auto option_buttons = find_all_by_class(base, "OptionButton");
+
+    // the scope dropdown has items "Inclusive" and "Self", which is distinct
+    // from the Measure dropdown ("Frame Time (ms)", "Physics Frame", etc.)
+    for (Node* node : option_buttons) {
+        String path = node->get_path();
+        if (!path.contains("/Profiler/")) continue;
+
+        OptionButton* ob = Object::cast_to<OptionButton>(node);
+        if (!ob) continue;
+
+        String text = ob->get_text();
+        if (text == "Inclusive" || text == "Self") {
+            profiler_scope_button.set(ob);
+            UtilityFunctions::print("EditorControlFinder: found profiler scope button at ", path);
+            break;
+        }
+    }
+
+    return profiler_scope_button.get();
+}
+
 void EditorControlFinder::invalidate_cache() {
     output_panel.clear();
     errors_tree.clear();
@@ -326,6 +441,10 @@ void EditorControlFinder::invalidate_cache() {
     stack_frames_tree.clear();
     debugger_inspector.clear();
     main_inspector.clear();
+    profiler_tree.clear();
+    profiler_frame_spinbox.clear();
+    profiler_start_button.clear();
+    profiler_scope_button.clear();
     // note: don't reset last_output_length - that tracks user's read position
 }
 

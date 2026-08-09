@@ -62,6 +62,12 @@ private:
     std::string capture_editor(int64_t id);
     std::string capture_game(int64_t id);
 
+    // profiler handler
+    std::string handle_get_profiler_frame(int64_t id, const std::string& params_str);
+
+    // discovery handler (temporary, for exploring profiler tab controls)
+    std::string handle_discover_profiler(int64_t id);
+
     // extract timeout and trigger callback
     void schedule_auto_stop(const std::string& params_str);
 

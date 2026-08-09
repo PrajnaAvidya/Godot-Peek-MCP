@@ -2,6 +2,7 @@
 #include "editor_control_finder.h"
 #include "debugger_plugin.h"
 
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
 #include <godot_cpp/classes/rich_text_label.hpp>
@@ -12,6 +13,8 @@
 #include <godot_cpp/classes/line_edit.hpp>
 #include <godot_cpp/classes/check_box.hpp>
 #include <godot_cpp/classes/button.hpp>
+#include <godot_cpp/classes/option_button.hpp>
+#include <godot_cpp/classes/spin_box.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/sub_viewport.hpp>
 #include <godot_cpp/classes/viewport_texture.hpp>
@@ -96,6 +99,10 @@ std::string MessageHandler::handle(const std::string& message) {
         return handle_debug_break(id);
     } else if (method == "get_screenshot") {
         return handle_get_screenshot(id, params_str);
+    } else if (method == "get_profiler_frame") {
+        return handle_get_profiler_frame(id, params_str);
+    } else if (method == "discover_profiler") {
+        return handle_discover_profiler(id);
     } else {
         return make_error(id, -32601, "Method not found: " + method);
     }
@@ -1156,4 +1163,308 @@ std::string MessageHandler::capture_game(int64_t id) {
     }
 
     return make_error(id, -32000, "Timeout waiting for game screenshot. Is screenshot_listener.gd added as autoload in your project?");
+}
+
+// ============================================================================
+// profiler frame handler
+// ============================================================================
+
+// helper: recursively collect profiler tree data as JSON
+// godot profiler tree columns: Function | Time(%) | Self(s) | Total(s) | Calls
+static void collect_profiler_tree_item(json& items, godot::TreeItem* item, int depth) {
+    if (!item) return;
+
+    json entry;
+    entry["depth"] = depth;
+
+    // col 0: function name (hierarchical, may be empty for root)
+    godot::String func_name = item->get_text(0);
+    entry["function"] = func_name.utf8().get_data();
+
+    // col 1: Time (%) or time value depending on measure mode
+    godot::String col1 = item->get_text(1);
+    entry["time_percent"] = col1.utf8().get_data();
+
+    // col 2: Self time
+    godot::String col2 = item->get_text(2);
+    entry["self_time"] = col2.utf8().get_data();
+
+    // col 3: Total time
+    godot::String col3 = item->get_text(3);
+    entry["total_time"] = col3.utf8().get_data();
+
+    // col 4: Calls
+    godot::String col4 = item->get_text(4);
+    entry["calls"] = col4.utf8().get_data();
+
+    // check for additional columns
+    int col_count = item->get_tree()->get_columns();
+    if (col_count > 5) {
+        json extra_cols = json::array();
+        for (int c = 5; c < col_count; c++) {
+            godot::String val = item->get_text(c);
+            extra_cols.push_back(val.utf8().get_data());
+        }
+        entry["extra_columns"] = extra_cols;
+    }
+
+    items.push_back(entry);
+
+    // recurse into children
+    godot::TreeItem* child = item->get_first_child();
+    while (child) {
+        collect_profiler_tree_item(items, child, depth + 1);
+        child = child->get_next();
+    }
+}
+
+std::string MessageHandler::handle_get_profiler_frame(int64_t id, const std::string& params_str) {
+    if (!control_finder) {
+        return make_error(id, -32000, "Control finder not initialized");
+    }
+
+    // parse frame_number from params
+    json params = json::parse(params_str, nullptr, false);
+    if (params.is_discarded()) {
+        return make_error(id, -32602, "Invalid params");
+    }
+    if (!params.contains("frame_number") || !params["frame_number"].is_number_integer()) {
+        return make_error(id, -32602, "Missing required param: frame_number");
+    }
+    int frame_number = params["frame_number"].get<int>();
+
+    // find the profiler spinbox and tree
+    godot::SpinBox* spinbox = control_finder->get_profiler_frame_spinbox();
+    godot::Tree* tree = control_finder->get_profiler_tree();
+    if (!tree) {
+        return make_error(id, -32000, "Profiler tree not found (is Profiler tab visible?)");
+    }
+
+    // check if profiler has collected frames via spinbox max value.
+    // with autostart, the start button stays unpressed even when profiler is active,
+    // so we check whether the frame counter has a meaningful range instead.
+    if (spinbox) {
+        double max_val = spinbox->get_max();
+        if (max_val <= 0) {
+            return make_error(id, -32000,
+                "No profiler frames collected. Click 'Start' in the Profiler tab or enable Autostart.");
+        }
+        // clamp frame_number to available range
+        if (frame_number < 0) frame_number = 0;
+        if (frame_number > static_cast<int>(max_val)) frame_number = static_cast<int>(max_val);
+
+        // set the frame counter — this fires value_changed which EditorProfiler uses to update the tree
+        spinbox->set_value(frame_number);
+        // brief yield so godot processes the signal and repopulates the tree
+        godot::OS::get_singleton()->delay_msec(50);
+    }
+
+    // switch scope dropdown to "Self" time before reading, then restore.
+    // the tree columns change meaning depending on scope: Inclusive=total (confusing),
+    // Self=time spent in the function itself (excluding callees).
+    int saved_scope_idx = -1;
+    int self_idx = -1;
+    godot::OptionButton* scope_btn = control_finder->get_profiler_scope_button();
+    if (scope_btn) {
+        // find which item index is "Self" and save current selection
+        saved_scope_idx = scope_btn->get_selected_id();
+        int item_count = scope_btn->get_item_count();
+        for (int i = 0; i < item_count; i++) {
+            godot::String item_text = scope_btn->get_item_text(i);
+            if (item_text == "Self") {
+                self_idx = i;
+                break;
+            }
+        }
+        if (self_idx >= 0 && saved_scope_idx != self_idx) {
+            scope_btn->select(self_idx);
+            godot::OS::get_singleton()->delay_msec(50);
+        }
+    }
+
+    // get column headers
+    json headers = json::array();
+    int col_count = tree->get_columns();
+    for (int c = 0; c < col_count; c++) {
+        godot::String title = tree->get_column_title(c);
+        if (title.length() > 0) {
+            headers.push_back(title.utf8().get_data());
+        } else {
+            headers.push_back("col_" + std::to_string(c));
+        }
+    }
+
+    // read tree data
+    json items = json::array();
+    godot::TreeItem* root = tree->get_root();
+    if (root) {
+        godot::TreeItem* child = root->get_first_child();
+        while (child) {
+            collect_profiler_tree_item(items, child, 0);
+            child = child->get_next();
+        }
+    }
+
+    // restore scope dropdown to original value
+    if (scope_btn && saved_scope_idx >= 0 && self_idx >= 0 && saved_scope_idx != self_idx) {
+        scope_btn->select(saved_scope_idx);
+    }
+
+    // return empty tree as informational, not error — tree may be empty if frame
+    // hasn't been profiled yet even though the counter range is non-zero
+    json result = {
+        {"frame_number", frame_number},
+        {"frame_max", spinbox ? spinbox->get_max() : 0.0},
+        {"columns", headers},
+        {"items", items},
+        {"count", static_cast<int64_t>(items.size())}
+    };
+    return make_result(id, result.dump());
+}
+
+// ============================================================================
+// discovery handler: dump all profiler tab controls for reverse engineering
+// ============================================================================
+
+// helper: recursively collect info about all descendant controls as JSON
+static void collect_control_info(Node* node, json& items, int depth) {
+    if (!node || depth > 30) return;
+
+    std::string cls = node->get_class().utf8().get_data();
+    std::string path = ((godot::String)node->get_path()).utf8().get_data();
+
+    json item = {
+        {"class", cls},
+        {"path", path},
+        {"depth", depth}
+    };
+
+    // capture extra attributes based on type
+    if (node->is_class("Button")) {
+        godot::Button* btn = godot::Object::cast_to<godot::Button>(node);
+        if (btn) {
+            item["text"] = btn->get_text().utf8().get_data();
+            item["pressed"] = btn->is_pressed();
+            item["toggle_mode"] = btn->is_toggle_mode();
+        }
+    } else if (node->is_class("SpinBox")) {
+        if (node->has_method("get_value")) {
+            godot::Variant val = node->call("get_value");
+            if (val.get_type() == godot::Variant::INT) {
+                item["value"] = static_cast<int64_t>(val);
+            } else if (val.get_type() == godot::Variant::FLOAT) {
+                item["value"] = static_cast<double>(val);
+            }
+        }
+    } else if (node->is_class("OptionButton")) {
+        godot::OptionButton* ob = godot::Object::cast_to<godot::OptionButton>(node);
+        if (ob) {
+            item["selected_id"] = ob->get_selected_id();
+            item["selected_text"] = ob->get_text().utf8().get_data();
+        }
+    } else if (node->is_class("Tree")) {
+        godot::Tree* tree = godot::Object::cast_to<godot::Tree>(node);
+        if (tree) {
+            item["columns"] = tree->get_columns();
+            bool has_root = tree->get_root() != nullptr;
+            item["has_root"] = has_root;
+            if (has_root) {
+                int child_count = 0;
+                godot::TreeItem* child = tree->get_root()->get_first_child();
+                while (child) { child_count++; child = child->get_next(); }
+                item["root_child_count"] = child_count;
+            }
+        }
+    } else if (node->is_class("RichTextLabel")) {
+        godot::RichTextLabel* rtl = godot::Object::cast_to<godot::RichTextLabel>(node);
+        if (rtl) {
+            godot::String text = rtl->get_parsed_text();
+            item["text_length"] = static_cast<int64_t>(text.length());
+        }
+    } else if (node->is_class("Label")) {
+        godot::Label* lbl = godot::Object::cast_to<godot::Label>(node);
+        if (lbl) {
+            godot::String text = lbl->get_text();
+            item["text"] = text.utf8().get_data();
+        }
+    }
+
+    items.push_back(item);
+
+    int child_count = node->get_child_count();
+    for (int i = 0; i < child_count; i++) {
+        collect_control_info(node->get_child(i), items, depth + 1);
+    }
+}
+
+std::string MessageHandler::handle_discover_profiler(int64_t id) {
+    godot::EditorInterface* editor = godot::EditorInterface::get_singleton();
+    if (!editor) {
+        return make_error(id, -32000, "EditorInterface not available");
+    }
+
+    godot::Control* base = editor->get_base_control();
+    if (!base) {
+        return make_error(id, -32000, "Base control not available");
+    }
+
+    // collect all controls where path contains "Profiler" (case-insensitive)
+    // also collect the Debugger tab buttons for context
+    json profiler_controls = json::array();
+    json debugger_tabs = json::array();
+
+    std::function<void(godot::Node*)> find_nodes = [&](godot::Node* root) {
+        if (!root) return;
+        std::string path = ((godot::String)root->get_path()).utf8().get_data();
+        std::string cls = root->get_class().utf8().get_data();
+
+        if (path.find("/Profiler") != std::string::npos ||
+            path.find("/Profiler/") != std::string::npos ||
+            path.find("Profiler") != std::string::npos) {
+            json info;
+            info["class"] = cls;
+            info["path"] = path;
+            profiler_controls.push_back(info);
+
+            // for containers, dump all children too
+            if (root->is_class("Container") || root->is_class("Panel") ||
+                root->is_class("Control") && root->get_child_count() > 5) {
+                json children = json::array();
+                collect_control_info(root, children, 0);
+                info["children"] = children;
+            }
+        }
+
+        // also collect debugger tab buttons for orientation
+        if (path.find("/Debugger/") != std::string::npos && root->is_class("Button")) {
+            godot::Button* btn = godot::Object::cast_to<godot::Button>(root);
+            if (btn) {
+                std::string text = btn->get_text().utf8().get_data();
+                json tab_info = {
+                    {"text", text},
+                    {"path", path},
+                    {"pressed", btn->is_pressed()},
+                    {"toggle_mode", btn->is_toggle_mode()}
+                };
+                debugger_tabs.push_back(tab_info);
+            }
+        }
+
+        // recurse
+        int child_count = root->get_child_count();
+        for (int i = 0; i < child_count; i++) {
+            find_nodes(root->get_child(i));
+        }
+    };
+
+    find_nodes(base);
+
+    json result = {
+        {"profiler_controls", profiler_controls},
+        {"debugger_tab_buttons", debugger_tabs},
+        {"total_profiler_nodes", static_cast<int64_t>(profiler_controls.size())},
+        {"total_tab_buttons", static_cast<int64_t>(debugger_tabs.size())}
+    };
+
+    return make_result(id, result.dump());
 }
