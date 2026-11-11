@@ -218,6 +218,8 @@ The runtime helper script (`peek_runtime_helper.gd`) stays included since it's r
 
 ## Notes
 
+**Late connection** — the MCP server starts even when no editor is running and retries the socket on the first tool call. This makes it safe to launch an agent session before opening the editor, and each checkout (including a git worktree) still gets its own socket derived from the directory name.
+
 **Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.
 
 **Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top). **Important:** `get_debugger_stack_trace` and `get_debugger_locals` only have data when the game is paused on a runtime error or breakpoint — calling them during normal execution returns empty results.

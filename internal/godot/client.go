@@ -27,6 +27,7 @@ type Client struct {
 	conn         net.Conn
 	reader       *bufio.Scanner
 	connected    bool
+	connectMu    sync.Mutex
 	outputBuffer []OutputNotification
 
 	// pending requests waiting for response
@@ -70,6 +71,13 @@ func NewClient(socketPath string) *Client {
 
 // Connect establishes connection to Godot
 func (c *Client) Connect(ctx context.Context) error {
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	if c.IsConnected() {
+		return nil
+	}
+
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return fmt.Errorf("dial unix socket: %w", err)
@@ -87,7 +95,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Unlock()
 
 	// start reading messages
-	go c.readLoop()
+	go c.readLoop(conn, scanner)
 
 	log.Printf("[godot] Connected to %s", c.socketPath)
 	return nil
@@ -98,6 +106,19 @@ func (c *Client) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected
+}
+
+// EnsureConnected dials Godot if the connection is not live.
+func (c *Client) EnsureConnected(ctx context.Context) error {
+	return c.ensureConnected(ctx)
+}
+
+// ensureConnected dials Godot if the connection is not live.
+func (c *Client) ensureConnected(ctx context.Context) error {
+	if c.IsConnected() {
+		return nil
+	}
+	return c.Connect(ctx)
 }
 
 // Close shuts down the client
@@ -114,10 +135,14 @@ func (c *Client) Close() error {
 }
 
 // readLoop handles incoming messages from Unix socket
-func (c *Client) readLoop() {
+func (c *Client) readLoop(conn net.Conn, reader *bufio.Scanner) {
 	defer func() {
 		c.mu.Lock()
-		c.connected = false
+		if c.conn == conn {
+			c.conn = nil
+			c.reader = nil
+			c.connected = false
+		}
 		c.mu.Unlock()
 	}()
 
@@ -126,14 +151,6 @@ func (c *Client) readLoop() {
 		case <-c.ctx.Done():
 			return
 		default:
-		}
-
-		c.mu.RLock()
-		reader := c.reader
-		c.mu.RUnlock()
-
-		if reader == nil {
-			return
 		}
 
 		// read one line (newline-delimited JSON)
@@ -284,7 +301,16 @@ func (c *Client) sendRequest(ctx context.Context, method string, params interfac
 	c.mu.RUnlock()
 
 	if !connected || conn == nil {
-		return nil, fmt.Errorf("not connected to Godot")
+		if err := c.ensureConnected(ctx); err != nil {
+			return nil, fmt.Errorf("not connected to Godot: %w", err)
+		}
+		c.mu.RLock()
+		conn = c.conn
+		connected = c.connected
+		c.mu.RUnlock()
+		if !connected || conn == nil {
+			return nil, fmt.Errorf("not connected to Godot")
+		}
 	}
 
 	id := nextID()
@@ -994,4 +1020,3 @@ func (c *Client) DiscoverProfiler(ctx context.Context) (json.RawMessage, error) 
 	}
 	return *resp.Result, nil
 }
-

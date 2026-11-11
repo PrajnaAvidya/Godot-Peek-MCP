@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/config"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 )
 
 // all known tool names for validation
@@ -331,7 +331,7 @@ func getOverridesArg(req mcp.CallToolRequest) godot.Overrides {
 
 func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -360,7 +360,7 @@ func makeRunMainScene(client *godot.Client) server.ToolHandlerFunc {
 
 func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -394,7 +394,7 @@ func makeRunScene(client *godot.Client) server.ToolHandlerFunc {
 
 func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -423,7 +423,7 @@ func makeRunCurrentScene(client *godot.Client) server.ToolHandlerFunc {
 
 func makeStopScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -437,7 +437,7 @@ func makeStopScene(client *godot.Client) server.ToolHandlerFunc {
 
 func makeRestartScene(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -461,7 +461,7 @@ func makeRestartScene(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetOutput(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -492,7 +492,7 @@ func makeGetOutput(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetDebugErrors(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -511,7 +511,7 @@ func makeGetDebugErrors(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetStackTrace(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -530,7 +530,7 @@ func makeGetStackTrace(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -563,7 +563,7 @@ func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetRemoteSceneTree(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -590,7 +590,7 @@ func makeGetRemoteSceneTree(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetRemoteNodeProperties(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -620,7 +620,7 @@ func makeGetRemoteNodeProperties(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetScreenshot(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -644,7 +644,7 @@ func makeGetScreenshot(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetMonitors(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -672,7 +672,7 @@ func makeGetMonitors(client *godot.Client) server.ToolHandlerFunc {
 
 func makeSetBreakpoint(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -709,7 +709,7 @@ func makeSetBreakpoint(client *godot.Client) server.ToolHandlerFunc {
 
 func makeClearBreakpoints(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -724,7 +724,7 @@ func makeClearBreakpoints(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetDebuggerState(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -749,7 +749,7 @@ func makeGetDebuggerState(client *godot.Client) server.ToolHandlerFunc {
 
 func makeDebugContinue(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -764,7 +764,7 @@ func makeDebugContinue(client *godot.Client) server.ToolHandlerFunc {
 
 func makeDebugStep(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -796,7 +796,7 @@ func makeDebugStep(client *godot.Client) server.ToolHandlerFunc {
 
 func makeDebugBreak(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -828,7 +828,7 @@ func makeEvaluateExpression(client *godot.Client) server.ToolHandlerFunc {
 
 func makeGetProfilerFrame(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -875,7 +875,7 @@ func makeGetProfilerFrame(client *godot.Client) server.ToolHandlerFunc {
 
 func makeDiscoverProfiler(client *godot.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !client.IsConnected() {
+		if err := client.EnsureConnected(ctx); err != nil {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
@@ -887,4 +887,3 @@ func makeDiscoverProfiler(client *godot.Client) server.ToolHandlerFunc {
 		return mcp.NewToolResultText(fmt.Sprintf("Profiler controls:\n%s", string(result))), nil
 	}
 }
-

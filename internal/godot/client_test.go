@@ -18,10 +18,11 @@ func newTestClient(t *testing.T) (*Client, net.Conn) {
 	t.Helper()
 	client := NewClient("test")
 	serverConn, clientConn := net.Pipe()
+	scanner := bufio.NewScanner(clientConn)
 	client.conn = clientConn
-	client.reader = bufio.NewScanner(clientConn)
+	client.reader = scanner
 	client.connected = true
-	go client.readLoop()
+	go client.readLoop(clientConn, scanner)
 	return client, serverConn
 }
 
