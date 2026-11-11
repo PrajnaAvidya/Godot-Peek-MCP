@@ -12,10 +12,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/config"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/godot"
 	"github.com/PrajnaAvidya/godot-peek-mcp/internal/tools"
+	"github.com/mark3labs/mcp-go/server"
 )
 
 const (
@@ -77,9 +77,10 @@ func run(ctx context.Context) error {
 
 	client := godot.NewClient(socketPath)
 
-	// try to connect with retries
+	// try to connect with retries, but keep serving if Godot is not up yet:
+	// the client reconnects on the first tool call once an editor is running.
 	if err := connectWithRetry(ctx, client, 3); err != nil {
-		return fmt.Errorf("failed to connect to Godot: %w", err)
+		log.Printf("starting MCP server without Godot (will retry on tool use): %v", err)
 	}
 	defer client.Close()
 
@@ -93,7 +94,7 @@ func run(ctx context.Context) error {
 	// register tools (respects config's disabled_tools)
 	tools.Register(mcpServer, client, cfg)
 
-	log.Printf("starting MCP server (connected to %s)", socketPath)
+	log.Printf("starting MCP server (socket %s)", socketPath)
 
 	// run stdio transport
 	return server.ServeStdio(mcpServer)
