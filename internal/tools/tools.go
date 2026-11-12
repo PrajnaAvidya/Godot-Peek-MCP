@@ -148,10 +148,7 @@ func Register(s *server.MCPServer, client *godot.Client, cfg *config.Config) {
 	// get_debugger_locals - get local variables for selected stack frame
 	addIfEnabled("get_debugger_locals",
 		mcp.NewTool("get_debugger_locals",
-			mcp.WithDescription("Get local variables from Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
-			mcp.WithNumber("frame_index",
-				mcp.Description("Stack frame index (0=top/current, higher=callers). Defaults to currently selected frame."),
-			),
+			mcp.WithDescription("Get local variables from the currently selected stack frame in the Godot Debugger. Only has data when game is PAUSED (runtime error or breakpoint hit). Returns empty during normal execution."),
 		),
 		makeGetLocals(client),
 	)
@@ -202,7 +199,7 @@ func Register(s *server.MCPServer, client *godot.Client, cfg *config.Config) {
 	// get_profiler_frame - get profiler call tree for a specific frame
 	addIfEnabled("get_profiler_frame",
 		mcp.NewTool("get_profiler_frame",
-			mcp.WithDescription("Get profiler call tree data for a specific frame number (requires profiler running via Start button or Autostart in Profiler tab)"),
+			mcp.WithDescription("Get profiler call tree data for a specific frame number (requires profiler running via Start button or Autostart in Profiler tab). Columns depend on the Godot version; Godot 4.4+ reports Name, Time, and Calls."),
 			mcp.WithNumber("frame_number",
 				mcp.Required(),
 				mcp.Description("Frame number to get profiler data for (0-indexed)"),
@@ -534,15 +531,7 @@ func makeGetLocals(client *godot.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("not connected to Godot editor"), nil
 		}
 
-		frameIndex := -1 // default: use currently selected frame
-		args := req.GetArguments()
-		if args != nil {
-			if v, ok := args["frame_index"].(float64); ok {
-				frameIndex = int(v)
-			}
-		}
-
-		result, err := client.GetLocals(ctx, frameIndex)
+		result, err := client.GetLocals(ctx)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to get locals: %v", err)), nil
 		}
@@ -865,8 +854,30 @@ func makeGetProfilerFrame(client *godot.Client) server.ToolHandlerFunc {
 			for i := 0; i < item.Depth; i++ {
 				indent += "  "
 			}
-			output += fmt.Sprintf("%s%s  [%s]  self=%s  total=%s  calls=%s\n",
-				indent, item.Function, item.TimePercent, item.SelfTime, item.TotalTime, item.Calls)
+
+			output += indent + item.Function
+			if len(item.Values) > 0 {
+				// values[0] is the name, already printed above
+				for i, value := range item.Values {
+					if i == 0 {
+						continue
+					}
+					label := ""
+					if i < len(result.Columns) {
+						label = result.Columns[i]
+					}
+					if label != "" {
+						output += fmt.Sprintf("  %s=%s", label, value)
+					} else {
+						output += fmt.Sprintf("  [%s]", value)
+					}
+				}
+				output += "\n"
+			} else {
+				// fallback for an older extension that predates raw values
+				output += fmt.Sprintf("  [%s]  self=%s  total=%s  calls=%s\n",
+					item.TimePercent, item.SelfTime, item.TotalTime, item.Calls)
+			}
 		}
 
 		return mcp.NewToolResultText(output), nil

@@ -161,7 +161,7 @@ Example: `{"DebugManager": {"debug_mode": true}}`
 | `get_output` | Get Output panel content | `clear`, `new_only` (optional) |
 | `get_debugger_errors` | Get Debugger Errors tab | none |
 | `get_debugger_stack_trace` | Get stack trace when paused on error/breakpoint | none |
-| `get_debugger_locals` | Get local variables when paused on error/breakpoint | `frame_index` (optional, 0=top) |
+| `get_debugger_locals` | Get local variables for the selected stack frame when paused | none |
 | `get_monitors` | Get performance monitors (FPS, memory, etc.) | none |
 | `get_profiler_frame` | Get profiler call tree for a specific frame | `frame_number` (0-indexed) |
 | `get_remote_scene_tree` | Get node tree from running game | `max_depth` (optional, 0=unlimited) |
@@ -222,13 +222,15 @@ The runtime helper script (`peek_runtime_helper.gd`) stays included since it's r
 
 **Output** reads from the Output panel: `print()`, `push_error()`, `push_warning()`, and editor messages.
 
-**Debugger tools** pull from the respective debugger tabs. `frame_index` selects which stack frame for locals (0=top). **Important:** `get_debugger_stack_trace` and `get_debugger_locals` only have data when the game is paused on a runtime error or breakpoint — calling them during normal execution returns empty results.
+**Debugger tools** pull from the respective debugger tabs. `get_debugger_locals` returns variables for the stack frame currently selected in the Debugger panel. **Important:** `get_debugger_stack_trace` and `get_debugger_locals` only have data when the game is paused on a runtime error or breakpoint — calling them during normal execution returns empty results.
+
+**Editor UI layout** — the tools locate Output, Debugger, and Inspector controls by their default dock paths and English tab names. Moving or floating those docks (Godot 4.7+ allows this), or using a non-English editor UI, can prevent some tools from finding their controls. The default dock layout with an English UI is supported; handling arbitrary dock layouts is a future enhancement.
 
 **Remote inspection** (`get_remote_scene_tree`, `get_remote_node_properties`) only works while the game is running.
 
 **Monitors** (`get_monitors`) shows engine performance data: FPS, memory usage, draw calls, physics stats, etc.
 
-**Profiler** (`get_profiler_frame`) returns the call tree for a specific frame with Self time, total time, and call counts. Requires the profiler to be running (click "Start" or enable "Autostart" in the Profiler tab). The scope dropdown is automatically switched to "Self" mode for cleaner data.
+**Profiler** (`get_profiler_frame`) returns the call tree for a specific frame with the columns reported by the editor. Godot 4.4+ reports `Name`, `Time`, and `Calls`; the `Time` value reflects the selected scope. Requires the profiler to be running (click "Start" or enable "Autostart" in the Profiler tab). The scope dropdown is automatically switched to "Self" mode for cleaner data.
 
 **Screenshots** save to `/tmp/godot_peek_*.png`. Editor screenshots capture active 2D/3D viewports. Game screenshots require the autoload that the plugin adds automatically.
 
@@ -258,8 +260,10 @@ Multiple MCP client sessions can connect simultaneously. Each session spawns its
 
 ## Requirements
 
-- Godot 4.4, 4.5, or 4.6
+- Godot 4.4, 4.5, 4.6, 4.7, or 4.8
 - Linux x86_64 or macOS arm64 (Apple Silicon)
+
+The extension is built against the Godot 4.4 GDExtension API so a single binary works across 4.4–4.8.
 
 ## Building from Source
 
@@ -270,5 +274,6 @@ If you want to build from source instead of using a release:
 go build -ldflags="-s -w" -o godot-peek-mcp ./cmd/godot-peek-mcp
 
 # c++ extension (requires godot-cpp — set GODOT_CPP_PATH or defaults to ~/Code/godot-cpp)
+# targets the 4.4 GDExtension API by default for forward compatibility
 cd extension && scons platform=linux target=editor
 ```

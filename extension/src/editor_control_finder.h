@@ -79,7 +79,6 @@ public:
     // find profiler tab controls (lazy cached)
     godot::Tree* get_profiler_tree();
     godot::SpinBox* get_profiler_frame_spinbox();
-    godot::Button* get_profiler_start_button();
     godot::OptionButton* get_profiler_scope_button();
 
     // clear cached references (call if editor UI changes)
@@ -107,6 +106,5 @@ private:
     CachedRef<godot::Control> main_inspector;
     CachedRef<godot::Tree> profiler_tree;
     CachedRef<godot::SpinBox> profiler_frame_spinbox;
-    CachedRef<godot::Button> profiler_start_button;
     CachedRef<godot::OptionButton> profiler_scope_button;
 };

@@ -36,6 +36,9 @@ public:
     void set_breakpoint(const String& path, int line, bool enabled);
     void clear_all_breakpoints();
 
+    // current debugger session index (used as the "debugger" signal argument)
+    int32_t get_current_session_id() const { return current_session_id; }
+
     // debugger state queries (not const because get_session isn't const in base class)
     bool is_paused();
     bool is_session_active();

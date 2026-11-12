@@ -5,8 +5,11 @@ import os
 # path to godot-cpp (override with GODOT_CPP_PATH env var for CI)
 godot_cpp_path = os.environ.get("GODOT_CPP_PATH", os.path.expanduser("~/Code/godot-cpp"))
 
-# import the godot-cpp build environment
-env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
+# import the godot-cpp build environment.
+# target the oldest supported GDExtension API (4.4) so a single binary is
+# forward-compatible with 4.5 through 4.8. override with api_version=... on
+# the command line when testing against a newer API.
+env = SConscript(os.path.join(godot_cpp_path, "SConstruct"), {"api_version": "4.4"})
 
 # add our source and deps directories to include path
 # deps/ contains nlohmann/json.hpp for JSON parsing

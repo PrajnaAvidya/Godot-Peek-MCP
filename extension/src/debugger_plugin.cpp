@@ -122,8 +122,10 @@ void GodotPeekDebuggerPlugin::set_breakpoint(const String& path, int line, bool 
 }
 
 void GodotPeekDebuggerPlugin::clear_all_breakpoints() {
-    // clear all cached breakpoints via CodeEdit
-    for (const auto& bp : cached_breakpoints) {
+    // copy first: set_breakpoint() erases entries from cached_breakpoints,
+    // so iterating the live vector would invalidate the iterator.
+    std::vector<CachedBreakpoint> breakpoints = cached_breakpoints;
+    for (const auto& bp : breakpoints) {
         set_breakpoint(String(bp.path.c_str()), bp.line, false);
     }
     cached_breakpoints.clear();

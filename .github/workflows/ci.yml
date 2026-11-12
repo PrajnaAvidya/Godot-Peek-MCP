@@ -53,7 +53,8 @@ jobs:
         working-directory: extension
         env:
           GODOT_CPP_PATH: /tmp/godot-cpp
-        run: scons platform=${{ matrix.platform }} target=editor arch=${{ matrix.arch }}
+        # target the 4.4 API so one binary is forward-compatible through 4.8
+        run: scons platform=${{ matrix.platform }} target=editor arch=${{ matrix.arch }} api_version=4.4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

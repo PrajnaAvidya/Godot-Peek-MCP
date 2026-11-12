@@ -113,3 +113,56 @@ TEST_CASE("split_node_path deep path") {
     CHECK(parts[0] == "root");
     CHECK(parts[5] == "Sprite2D");
 }
+
+// --- map_profiler_row ---
+
+TEST_CASE("map_profiler_row handles godot 4.4+ three-column layout") {
+    ProfilerRow row = map_profiler_row({"Script Functions", "1.23 ms", "42"});
+
+    CHECK(row.function == "Script Functions");
+    CHECK(row.time_percent.empty());
+    CHECK(row.self_time == "1.23 ms");
+    CHECK(row.total_time.empty());
+    CHECK(row.calls == "42");
+    REQUIRE(row.values.size() == 3);
+    CHECK(row.values[1] == "1.23 ms");
+}
+
+TEST_CASE("map_profiler_row handles legacy five-column layout") {
+    ProfilerRow row = map_profiler_row({"foo", "10.0%", "1.00", "2.00", "5"});
+
+    CHECK(row.function == "foo");
+    CHECK(row.time_percent == "10.0%");
+    CHECK(row.self_time == "1.00");
+    CHECK(row.total_time == "2.00");
+    CHECK(row.calls == "5");
+}
+
+TEST_CASE("map_profiler_row handles empty values") {
+    ProfilerRow row = map_profiler_row({});
+
+    CHECK(row.function.empty());
+    CHECK(row.time_percent.empty());
+    CHECK(row.self_time.empty());
+    CHECK(row.total_time.empty());
+    CHECK(row.calls.empty());
+    CHECK(row.values.empty());
+}
+
+// --- extract_type_from_tooltip ---
+
+TEST_CASE("extract_type_from_tooltip parses godot 4.4+ format") {
+    CHECK(extract_type_from_tooltip("Player\nType: CharacterBody3D") == "CharacterBody3D");
+}
+
+TEST_CASE("extract_type_from_tooltip ignores instance lines") {
+    CHECK(extract_type_from_tooltip("Player\nInstance: res://player.tscn\nType: Node3D") == "Node3D");
+}
+
+TEST_CASE("extract_type_from_tooltip falls back to parentheses") {
+    CHECK(extract_type_from_tooltip("Player (Node3D)") == "Node3D");
+}
+
+TEST_CASE("extract_type_from_tooltip returns empty when no type") {
+    CHECK(extract_type_from_tooltip("Player").empty());
+}
