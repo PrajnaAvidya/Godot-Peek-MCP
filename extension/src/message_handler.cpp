@@ -20,7 +20,6 @@
 #include <godot_cpp/classes/viewport_texture.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/packet_peer_udp.hpp>
-#include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -595,15 +594,13 @@ std::string MessageHandler::handle_get_debugger_locals(int64_t id) {
         return make_error(id, -32000, "EditorDebuggerInspector not found (is debugger paused?)");
     }
 
-    // extract properties from inspector
-    // note: frame_index selection not implemented yet (would require async handling)
+    // returns locals for the currently selected stack frame
     json locals = json::array();
     collect_editor_properties(inspector, locals);
 
     json result = {
         {"locals", locals},
-        {"count", static_cast<int64_t>(locals.size())},
-        {"frame_index", -1}
+        {"count", static_cast<int64_t>(locals.size())}
     };
     return make_result(id, result.dump());
 }
@@ -619,19 +616,13 @@ static std::string get_scene_tree_item_text(TreeItem* item, int depth, int max_d
     if (node_name.length() > 0) {
         std::string name_str = node_name.utf8().get_data();
 
-        // try to get node type from tooltip
+        // try to get node type from tooltip.
+        // godot 4.4+ uses "NodeName\nType: Node3D"; older/custom tooltips may
+        // use "NodeName (Node3D)".
         String tooltip = item->get_tooltip_text(0);
         std::string type_str;
         if (tooltip.length() > 0) {
-            // tooltip often contains "NodeName (Type)" or type info
-            std::string tt = tooltip.utf8().get_data();
-            size_t paren_pos = tt.find('(');
-            if (paren_pos != std::string::npos) {
-                size_t end_paren = tt.find(')', paren_pos);
-                if (end_paren != std::string::npos) {
-                    type_str = tt.substr(paren_pos + 1, end_paren - paren_pos - 1);
-                }
-            }
+            type_str = extract_type_from_tooltip(tooltip.utf8().get_data());
         }
 
         // build output line: "  NodeName (Type)" or just "  NodeName"
@@ -777,14 +768,15 @@ bool MessageHandler::trigger_remote_inspection(Tree* tree, TreeItem* item) {
     tree->set_selected(item, 0);
 
     // emit signal to trigger inspection
-    // 4.5/4.6 use "objects_selected" with PackedInt64Array
-    // 4.4 uses "object_selected" with single int
+    // 4.5+ use "objects_selected" with an Array of object ids
+    // 4.4 uses "object_selected" with a single int
+    int32_t debugger_id = debugger_plugin ? debugger_plugin->get_current_session_id() : 0;
     if (tree->has_signal("objects_selected")) {
-        PackedInt64Array ids;
+        Array ids;
         ids.push_back(object_id);
-        tree->emit_signal("objects_selected", ids, 0);
+        tree->emit_signal("objects_selected", ids, debugger_id);
     } else if (tree->has_signal("object_selected")) {
-        tree->emit_signal("object_selected", object_id, 0);
+        tree->emit_signal("object_selected", object_id, debugger_id);
     } else {
         return false;
     }
@@ -1169,41 +1161,37 @@ std::string MessageHandler::capture_game(int64_t id) {
 // profiler frame handler
 // ============================================================================
 
-// helper: recursively collect profiler tree data as JSON
-// godot profiler tree columns: Function | Time(%) | Self(s) | Total(s) | Calls
+// helper: recursively collect profiler tree data as JSON.
+// the column layout changed across godot versions:
+//   4.4+:   Name | Time | Calls
+//   older:  Function | Time(%) | Self(s) | Total(s) | Calls
+// map_profiler_row() normalizes both layouts.
 static void collect_profiler_tree_item(json& items, godot::TreeItem* item, int depth) {
     if (!item) return;
 
     json entry;
     entry["depth"] = depth;
 
-    // col 0: function name (hierarchical, may be empty for root)
-    godot::String func_name = item->get_text(0);
-    entry["function"] = func_name.utf8().get_data();
-
-    // col 1: Time (%) or time value depending on measure mode
-    godot::String col1 = item->get_text(1);
-    entry["time_percent"] = col1.utf8().get_data();
-
-    // col 2: Self time
-    godot::String col2 = item->get_text(2);
-    entry["self_time"] = col2.utf8().get_data();
-
-    // col 3: Total time
-    godot::String col3 = item->get_text(3);
-    entry["total_time"] = col3.utf8().get_data();
-
-    // col 4: Calls
-    godot::String col4 = item->get_text(4);
-    entry["calls"] = col4.utf8().get_data();
-
-    // check for additional columns
     int col_count = item->get_tree()->get_columns();
+    std::vector<std::string> values;
+    values.reserve(col_count);
+    for (int c = 0; c < col_count; c++) {
+        values.push_back(item->get_text(c).utf8().get_data());
+    }
+
+    ProfilerRow row = map_profiler_row(values);
+    entry["function"] = row.function;
+    entry["time_percent"] = row.time_percent;
+    entry["self_time"] = row.self_time;
+    entry["total_time"] = row.total_time;
+    entry["calls"] = row.calls;
+    entry["values"] = row.values;
+
+    // keep extra_columns for older clients; it is redundant with "values"
     if (col_count > 5) {
         json extra_cols = json::array();
         for (int c = 5; c < col_count; c++) {
-            godot::String val = item->get_text(c);
-            extra_cols.push_back(val.utf8().get_data());
+            extra_cols.push_back(values[c]);
         }
         entry["extra_columns"] = extra_cols;
     }
@@ -1266,8 +1254,8 @@ std::string MessageHandler::handle_get_profiler_frame(int64_t id, const std::str
     int self_idx = -1;
     godot::OptionButton* scope_btn = control_finder->get_profiler_scope_button();
     if (scope_btn) {
-        // find which item index is "Self" and save current selection
-        saved_scope_idx = scope_btn->get_selected_id();
+        // find which item index is "Self" and save the current selection index
+        saved_scope_idx = scope_btn->get_selected();
         int item_count = scope_btn->get_item_count();
         for (int i = 0; i < item_count; i++) {
             godot::String item_text = scope_btn->get_item_text(i);

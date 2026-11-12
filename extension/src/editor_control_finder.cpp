@@ -369,35 +369,6 @@ SpinBox* EditorControlFinder::get_profiler_frame_spinbox() {
     return profiler_frame_spinbox.get();
 }
 
-Button* EditorControlFinder::get_profiler_start_button() {
-    Button* cached = profiler_start_button.get();
-    if (cached) {
-        return cached;
-    }
-
-    EditorInterface* editor = EditorInterface::get_singleton();
-    if (!editor) return nullptr;
-
-    Control* base = editor->get_base_control();
-    if (!base) return nullptr;
-
-    auto buttons = find_all_by_class(base, "Button");
-
-    for (Node* node : buttons) {
-        String path = node->get_path();
-        if (path.contains("/Profiler/")) {
-            Button* btn = Object::cast_to<Button>(node);
-            if (btn && btn->get_text() == "Start") {
-                profiler_start_button.set(btn);
-                UtilityFunctions::print("EditorControlFinder: found profiler start button at ", path);
-                break;
-            }
-        }
-    }
-
-    return profiler_start_button.get();
-}
-
 OptionButton* EditorControlFinder::get_profiler_scope_button() {
     OptionButton* cached = profiler_scope_button.get();
     if (cached) {
@@ -413,7 +384,10 @@ OptionButton* EditorControlFinder::get_profiler_scope_button() {
     auto option_buttons = find_all_by_class(base, "OptionButton");
 
     // the scope dropdown has items "Inclusive" and "Self", which is distinct
-    // from the Measure dropdown ("Frame Time (ms)", "Physics Frame", etc.)
+    // from the Measure dropdown ("Frame Time (ms)", "Physics Frame", etc.).
+    // fall back to the only 2-item dropdown in the profiler so localized
+    // editors work without relying on English item text.
+    OptionButton* two_item_candidate = nullptr;
     for (Node* node : option_buttons) {
         String path = node->get_path();
         if (!path.contains("/Profiler/")) continue;
@@ -425,8 +399,17 @@ OptionButton* EditorControlFinder::get_profiler_scope_button() {
         if (text == "Inclusive" || text == "Self") {
             profiler_scope_button.set(ob);
             UtilityFunctions::print("EditorControlFinder: found profiler scope button at ", path);
-            break;
+            return profiler_scope_button.get();
         }
+
+        if (!two_item_candidate && ob->get_item_count() == 2) {
+            two_item_candidate = ob;
+        }
+    }
+
+    if (two_item_candidate) {
+        profiler_scope_button.set(two_item_candidate);
+        UtilityFunctions::print("EditorControlFinder: found profiler scope button at ", two_item_candidate->get_path());
     }
 
     return profiler_scope_button.get();
@@ -443,7 +426,6 @@ void EditorControlFinder::invalidate_cache() {
     main_inspector.clear();
     profiler_tree.clear();
     profiler_frame_spinbox.clear();
-    profiler_start_button.clear();
     profiler_scope_button.clear();
     // note: don't reset last_output_length - that tracks user's read position
 }

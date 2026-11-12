@@ -73,11 +73,6 @@ type GetOutputParams struct {
 	NewOnly bool `json:"new_only"`
 }
 
-// GetLocalsParams for get_debugger_locals method
-type GetLocalsParams struct {
-	FrameIndex int `json:"frame_index"`
-}
-
 // OutputResult from get_output
 type OutputResult struct {
 	Output      string `json:"output"`
@@ -205,7 +200,9 @@ type GetProfilerFrameParams struct {
 	FrameNumber int `json:"frame_number"`
 }
 
-// ProfilerFrameItem represents a single row in the profiler call tree
+// ProfilerFrameItem represents a single row in the profiler call tree.
+// Values holds the raw cells for every column reported by the editor, so
+// callers work across Godot versions with different profiler layouts.
 type ProfilerFrameItem struct {
 	Depth       int      `json:"depth"`
 	Function    string   `json:"function"`
@@ -213,6 +210,7 @@ type ProfilerFrameItem struct {
 	SelfTime    string   `json:"self_time"`
 	TotalTime   string   `json:"total_time"`
 	Calls       string   `json:"calls"`
+	Values      []string `json:"values,omitempty"`
 	ExtraCols   []string `json:"extra_columns,omitempty"`
 }
 
@@ -224,4 +222,3 @@ type ProfilerFrameResult struct {
 	Items       []ProfilerFrameItem `json:"items"`
 	Count       int                 `json:"count"`
 }
-
